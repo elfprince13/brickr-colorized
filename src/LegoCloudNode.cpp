@@ -536,17 +536,57 @@ void LegoCloudNode::exportToLdr(QString filename)
 
 void LegoCloudNode::exportToObj(QString filename)
 {
+
+  const float LEGO_VERTICAL_TOLERANCE = 0.0001f;
+  int brickIndex = 0;
+  int vertexIndex = 1;
+  //const QList<LegoBrick*>& outterBricks = legoCloud_->getOuterBricks();
+  std::cout << "Flood filling open space markers...";
+  LegoBrick *outside = new LegoBrick(-1, 0, 0, legoCloud_->getWidth(), legoCloud_->getDepth());
+  QMap<VoxelCoord, QVector<VoxelCoord>> queue;
+  auto visit = [&queue,&outside,this](const VoxelCoord& vc) {
+      auto& voxelGrid = legoCloud_->getVoxelGrid();
+      LegoBrick*& voxel = voxelGrid[vc.z][vc.x][vc.y];
+      if(nullptr == voxel) {
+          voxel = outside;
+          QVector<VoxelCoord> neighbors = legoCloud_->getL1Neighbors(vc);
+          brickr::erase_if(neighbors, [&voxelGrid](const VoxelCoord& vc){
+              return nullptr != voxelGrid[vc.z][vc.x][vc.y];
+          });
+          queue.insert(vc,neighbors);
+      }
+  };
+  for(int x = 0; x < legoCloud_->getWidth(); ++x) {
+      for(int y = 0; y < legoCloud_->getDepth(); ++y) {
+          visit({x, y, 0});
+          visit({x, y, legoCloud_->getHeight() - 1});
+      }
+  }
+  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+      for(int y = 0; y < legoCloud_->getDepth(); ++y) {
+          visit({0, y, z});
+          visit({legoCloud_->getWidth() - 1, y, z});
+      }
+  }
+  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+      for(int x = 0; x < legoCloud_->getWidth(); ++x) {
+          visit({x, 0, z});
+          visit({x, legoCloud_->getDepth() - 1, z});
+      }
+  }
+  while(queue.size()) {
+      QVector<VoxelCoord> neighbors = queue.take(queue.firstKey());
+      for(auto it = neighbors.begin(); it != neighbors.end(); ++it){
+          visit(*it);
+      }
+  }
+  std::cout << "Done" << std::endl;
   //Create the file
   std::ofstream objFile (filename.toStdString().c_str());
   if (!objFile.is_open())
   {
     std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
   }
-
-  const float LEGO_VERTICAL_TOLERANCE = 0.0001f;
-  int brickIndex = 0;
-  int vertexIndex = 1;
-  //const QList<LegoBrick*>& outterBricks = legoCloud_->getOuterBricks();
 
   for(int level = 0; level < legoCloud_->getLevelNumber(); level++)
   {
@@ -583,46 +623,58 @@ void LegoCloudNode::exportToObj(QString filename)
       objFile << "v " << p2[0] << " " << p2[1] << " " << p1[2] << std::endl;
       objFile << "v " << p2[0] << " " << p2[1] << " " << p2[2] << std::endl << std::endl;
 
+      QVector<QVector<bool>> visibleStud(brick->getSizeX());
+      QVector<QVector<int>> studIndices(brick->getSizeX());
+      int studCount = 0;
+
       //Write knobs vertices
       for(int x = 0; x < brick->getSizeX(); ++x)
       {
+          visibleStud[x] = QVector<bool>(brick->getSizeY());
+          studIndices[x] = QVector<int>(brick->getSizeY());
         for(int y = 0; y < brick->getSizeY(); ++y)
         {
+            visibleStud[x][y] = ((1 + level) == legoCloud_->getLevelNumber()) || (outside == legoCloud_->getVoxelGrid()[level+1][x+brickIt->getPosX()][y+brickIt->getPosY()]);
+            if(visibleStud[x][y])
+            {
+                studIndices[x][y] = studCount++;
+                //Cylinder
+                /*objFile << "v "
+                        << knobCenter[0] + x*LEGO_KNOB_DISTANCE << " "
+                        << knobCenter[1] << " "
+                        << knobCenter[2] + y*LEGO_KNOB_DISTANCE << std::endl;*/
 
-          //Cylinder
-          /*objFile << "v "
-                  << knobCenter[0] + x*LEGO_KNOB_DISTANCE << " "
-                  << knobCenter[1] << " "
-                  << knobCenter[2] + y*LEGO_KNOB_DISTANCE << std::endl;*/
+                for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                {
+                  double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
+                  objFile << "v "
+                          << knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS << " "
+                          << knobCenter[1] << " "
+                          << knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS << std::endl;
 
-          for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-          {
-            double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
-            objFile << "v "
-                    << knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS << " "
-                    << knobCenter[1] << " "
-                    << knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS << std::endl;
+                  objFile << "v "
+                          << knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS << " "
+                          << knobCenter[1] - LEGO_KNOB_HEIGHT << " "
+                          << knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS << std::endl;
 
-            objFile << "v "
-                    << knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS << " "
-                    << knobCenter[1] - LEGO_KNOB_HEIGHT << " "
-                    << knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS << std::endl;
+                }
 
-          }
-
-          /*
-          //Draw disk on top
-          glBegin(GL_TRIANGLE_FAN);
-          glNormal3d(0.0, 1.0, 0.0);
-          glVertex3d(knobCenter[0]+x*LEGO_KNOB_DISTANCE, knobCenter[1], knobCenter[2]+y*LEGO_KNOB_DISTANCE);
-          for(int i = 0; i <= KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-          {
-            double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
-            glVertex3d(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
-                       knobCenter[1],
-                       knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS);
-          }
-          glEnd();*/
+                /*
+                //Draw disk on top
+                glBegin(GL_TRIANGLE_FAN);
+                glNormal3d(0.0, 1.0, 0.0);
+                glVertex3d(knobCenter[0]+x*LEGO_KNOB_DISTANCE, knobCenter[1], knobCenter[2]+y*LEGO_KNOB_DISTANCE);
+                for(int i = 0; i <= KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                {
+                  double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
+                  glVertex3d(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
+                             knobCenter[1],
+                             knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS);
+                }
+                glEnd();*/
+            } else {
+                studIndices[x][y] = -1;
+            }
         }
       }
 
@@ -662,13 +714,15 @@ void LegoCloudNode::exportToObj(QString filename)
       {
         for(int y = 0; y < brick->getSizeY(); ++y)
         {
-          int knobIndex = vertexIndex+8 + (x*brick->getSizeY() + y) * (2*KNOB_RESOLUTION_OBJ_EXPORT);
-          objFile << "f";
-          for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)//The degree of the face equals KNOB_RESOLUTION_OBJ_EXPORT
-          {
-            objFile << " " << knobIndex + 2*i;
-          }
-          objFile << std::endl;
+            if(visibleStud[x][y]){
+                int knobIndex = vertexIndex+8 + studIndices[x][y] * (2*KNOB_RESOLUTION_OBJ_EXPORT);
+                objFile << "f";
+                for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)//The degree of the face equals KNOB_RESOLUTION_OBJ_EXPORT
+                {
+                  objFile << " " << knobIndex + 2*i;
+                }
+                objFile << std::endl;
+            }
         }
       }
 
@@ -678,24 +732,41 @@ void LegoCloudNode::exportToObj(QString filename)
       {
         for(int y = 0; y < brick->getSizeY(); ++y)
         {
-          int knobIndex = vertexIndex+8 + (x*brick->getSizeY() + y) * (2*KNOB_RESOLUTION_OBJ_EXPORT);
+            if(visibleStud[x][y]){
+                int knobIndex = vertexIndex+8 + studIndices[x][y] * (2*KNOB_RESOLUTION_OBJ_EXPORT);
 
-          for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-          {
-            //Check if it is not the last face
-            if(i != KNOB_RESOLUTION_OBJ_EXPORT-1)
-              objFile << "f " << knobIndex + 2*i+0 << " " << knobIndex + 2*i+1 << " " << knobIndex + 2*i+3 << " " << knobIndex + 2*i+2 << std::endl;
-            else//The last face should connect to the first vertices (0 and 1)
-              objFile << "f " << knobIndex + 2*i+0 << " " << knobIndex + 2*i+1 << " " << knobIndex + 1 << " " << knobIndex + 0 << std::endl;
+                for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                {
+                  //Check if it is not the last face
+                  if(i != KNOB_RESOLUTION_OBJ_EXPORT-1)
+                    objFile << "f " << knobIndex + 2*i+0 << " " << knobIndex + 2*i+1 << " " << knobIndex + 2*i+3 << " " << knobIndex + 2*i+2 << std::endl;
+                  else//The last face should connect to the first vertices (0 and 1)
+                    objFile << "f " << knobIndex + 2*i+0 << " " << knobIndex + 2*i+1 << " " << knobIndex + 1 << " " << knobIndex + 0 << std::endl;
 
-          }
+                }
+            }
         }
       }
 
       brickIndex++;
-      vertexIndex += 8 + brick->getSizeX()*brick->getSizeY()*(2*KNOB_RESOLUTION_OBJ_EXPORT);
+      vertexIndex += 8 + studCount*(2*KNOB_RESOLUTION_OBJ_EXPORT);
     }
   }
 
+
   objFile.close();
+
+  std::cout << "Clearing open space markers...";
+  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+      for(int x = 0; x < legoCloud_->getWidth(); ++x) {
+          for(int y = 0; y < legoCloud_->getDepth(); ++y) {
+              LegoBrick*& voxel = legoCloud_->getVoxelGrid()[z][x][y];
+              if(outside == voxel){
+                  voxel = nullptr;
+              }
+          }
+      }
+  }
+  delete outside;
+  std::cout << "Done" << std::endl;
 }

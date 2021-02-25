@@ -10,6 +10,40 @@
 #include "LegoBrick.h"
 #include "LegoGraph.h"
 
+struct VoxelCoord {
+   int x;
+   int y;
+   int z;
+   inline bool operator<(const VoxelCoord& o) const {
+       return ((x < o.x)
+               ? true
+               : ((x == o.x)
+                  ? ((y < o.y)
+                     ? true
+                     : ((y == o.y)
+                        ? (z < o.z)
+                        : false))
+                  : false));
+   }
+
+   // strict less than
+   inline bool operator<<(const VoxelCoord& o) const {
+       return (x < o.x) && (y < o.y) && (z < o.z);
+   }
+};
+
+namespace brickr{
+// clone std::erase_if from C++20
+template<typename Container, typename Pred>
+void erase_if(Container& c, Pred pred) {
+    for(auto it = c.begin();
+        it != c.end(); // end iterator may be invalidated by erasures!
+        (pred(*it)
+         ? (it = c.erase(it))
+         : (++it))); // intentionally empty
+}
+}
+
 class LegoCloud
 {
 public:
@@ -50,6 +84,7 @@ public:
 
   inline int getWidth() const {return width_;}
   inline int getDepth() const {return depth_;}
+  inline int getHeight() const {return height_;}
 
   //GRAPH
   inline const LegoGraph& getLegoGraph() const {return graph_;}
@@ -66,6 +101,11 @@ public:
 
   std::string toLDrawLine(const LegoBrick& brick) const;
   std::string toLDraw() const;
+
+  const QVector<QVector<QVector<LegoBrick*> > >& getVoxelGrid() const;
+  QVector<QVector<QVector<LegoBrick*> > >& getVoxelGrid();
+
+  QVector<VoxelCoord> getL1Neighbors(const VoxelCoord&) const;
 
 private:
   LegoBrick *addBrick(int level, int posX, int posY, int sizeX, int sizeY);//Level must already exist

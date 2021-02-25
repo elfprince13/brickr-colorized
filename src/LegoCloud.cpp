@@ -253,6 +253,21 @@ void LegoCloud::addVoxel(int level, int posX, int posY, LegoBrick* brick)
 }
 
 
+QVector<VoxelCoord> LegoCloud::getL1Neighbors(const VoxelCoord& src) const {
+    QVector<VoxelCoord> result;
+    result.push_back({src.x - 1, src.y, src.z});
+    result.push_back({src.x + 1, src.y, src.z});
+    result.push_back({src.x, src.y - 1, src.z});
+    result.push_back({src.x, src.y + 1, src.z});
+    result.push_back({src.x, src.y, src.z - 1});
+    result.push_back({src.x, src.y, src.z + 1});
+    const auto end = result.end();
+    VoxelCoord mins{-1, -1, -1}, maxs{width_, depth_, height_};
+    brickr::erase_if(result, [&mins,&maxs](const VoxelCoord neighbor){
+        return !((mins << neighbor) && (neighbor << maxs));
+    });
+    return result;
+}
 
 void LegoCloud::buildNeighbourhood()//Assumption: there is only 1x1 bricks
 {
@@ -334,8 +349,8 @@ void LegoCloud::buildNeighbourhood()//Assumption: there is only 1x1 bricks
 
       if(level > 0)
       {
-        LegoBrick* aboveNeighbour = voxelGrid_[level-1][brickIt->getPosX()][brickIt->getPosY()];
-        if(aboveNeighbour != NULL)
+        LegoBrick* belowNeighbour = voxelGrid_[level-1][brickIt->getPosX()][brickIt->getPosY()];
+        if(belowNeighbour != NULL)
         {
           //Must not add this edge to prevent multigraph
           //boost::add_edge(brickToVertex_[&(*brickIt)], brickToVertex_[aboveNeighbour],graph_);
@@ -434,7 +449,7 @@ void LegoCloud::preHollow(int shellThickness)
     removeBrick(brick);
   }
 
-  voxelGrid_.clear();
+  //voxelGrid_.clear(); // <- wtf was this for?
 }
 
 QSet<LegoBrick *>& LegoCloud::getNeighbours(LegoBrick *brick)
@@ -1922,4 +1937,13 @@ std::string LegoCloud::toLDraw() const {
         }
     }
     return buffer.str();
+}
+
+const QVector<QVector<QVector<LegoBrick*> > >& LegoCloud::getVoxelGrid() const {
+    return voxelGrid_;
+}
+
+
+QVector<QVector<QVector<LegoBrick*> > >& LegoCloud::getVoxelGrid() {
+    return voxelGrid_;
 }
