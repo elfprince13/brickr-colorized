@@ -64,6 +64,8 @@ public:
 
   inline const QVector<Color3>& getLegalColor() {return legalColors_;}
 
+  std::string toLDrawLine(const LegoBrick& brick) const;
+  std::string toLDraw() const;
 
 private:
   LegoBrick *addBrick(int level, int posX, int posY, int sizeX, int sizeY);//Level must already exist
@@ -102,6 +104,8 @@ private:
 
   QSet<BrickSize> legalBricks_;
   QVector<Color3> legalColors_;
+  QVector<uint16_t> ldrawColors_;
+  static const QMap<BrickSize,std::string>& ldrawParts();
 
   QMap<BrickSize, int> brickLimitation_;
   QMap<BrickSize, int> brickNumber_;

@@ -228,7 +228,7 @@ bool AssemblyPlugin::parseBinvox(const std::string& filename, LegoCloudNode* leg
 
   size = width * height * depth;
   legoCloudNode->getLegoCloud()->setVoxelGridDimmension(height, width, depth);
-
+  /*
   if(colorFile.exists()) {
     if(colorFile.open(QIODevice::ReadOnly)) {
         QTextStream stream(&colorFile);
@@ -246,6 +246,7 @@ bool AssemblyPlugin::parseBinvox(const std::string& filename, LegoCloudNode* leg
         colorFile.close();
     }
   }
+  //*/
 
   //
   // read voxel data
@@ -275,10 +276,17 @@ bool AssemblyPlugin::parseBinvox(const std::string& filename, LegoCloudNode* leg
               int key = level * width * height + y * width + x;
 
               LegoBrick* brick = legoCloudNode->getLegoCloud()->addBrick(level, x, y);
+              /*
               if(colors.contains(key)) {
                   brick->setColorId(colors.value(key));
               }
-              legoCloudNode->getLegoCloud()->addVoxel(level, x, y, brick);
+              //*/
+              if(value <= legoCloudNode->getLegoCloud()->getLegalColor().size()) {
+                  brick->setColorId(value - 1); // outer if implies value >= 1
+                  legoCloudNode->getLegoCloud()->addVoxel(level, x, y, brick);
+              } else {
+                  std::cerr << "Invalid color index " << (int)value << std::endl;
+              }
           }
           nr_voxels += count;
       }

@@ -5,6 +5,8 @@
 #include <boost/graph/biconnected_components.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <QTime>
+#include <algorithm>
+#include <sstream>
 
 #define DEFAULT_COLOR_ID 2
 
@@ -23,6 +25,7 @@ LegoCloud::LegoCloud()
   legalLengths.push_back(6);
   //legalLengths.push_back(7);
   legalLengths.push_back(8);
+  legalLengths.push_back(10);
 
   foreach(char l, legalLengths)
   {
@@ -47,7 +50,95 @@ LegoCloud::LegoCloud()
   legalColors_.push_back(LegoBrick::Color4(245/255.0, 205/255.0, 47/255.0, 1));//Bright yellow
   legalColors_.push_back(LegoBrick::Color4(218/255.0, 133/255.0, 64/255.0, 1));//Bright orange
   legalColors_.push_back(LegoBrick::Color4(105/255.0, 64/255.0, 39/255.0, 1));//Redish brown*/
-
+  legalColors_ = QVector<Color3>({
+                                     Color3(0x1B / 255.0f,0x2A / 255.0f, 0x34 / 255.0f),
+                                     Color3(0x1E / 255.0f,0x5A / 255.0f, 0xA8 / 255.0f),
+                                     Color3(0x00 / 255.0f,0x85 / 255.0f, 0x2B / 255.0f),
+                                     Color3(0x06 / 255.0f,0x9D / 255.0f, 0x9F / 255.0f),
+                                     Color3(0xB4 / 255.0f,0x00 / 255.0f, 0x00 / 255.0f),
+                                     Color3(0xD3 / 255.0f,0x35 / 255.0f, 0x9D / 255.0f),
+                                     Color3(0x54 / 255.0f,0x33 / 255.0f, 0x24 / 255.0f),
+                                     Color3(0x8A / 255.0f,0x92 / 255.0f, 0x8D / 255.0f),
+                                     Color3(0x54 / 255.0f,0x59 / 255.0f, 0x55 / 255.0f),
+                                     Color3(0x97 / 255.0f,0xCB / 255.0f, 0xD9 / 255.0f),
+                                     Color3(0x58 / 255.0f,0xAB / 255.0f, 0x41 / 255.0f),
+                                     Color3(0x00 / 255.0f,0xAA / 255.0f, 0xA4 / 255.0f),
+                                     Color3(0xF0 / 255.0f,0x6D / 255.0f, 0x61 / 255.0f),
+                                     Color3(0xF6 / 255.0f,0xA9 / 255.0f, 0xBB / 255.0f),
+                                     Color3(0xFA / 255.0f,0xC8 / 255.0f, 0x0A / 255.0f),
+                                     Color3(0xF4 / 255.0f,0xF4 / 255.0f, 0xF4 / 255.0f),
+                                     Color3(0xAD / 255.0f,0xD9 / 255.0f, 0xA8 / 255.0f),
+                                     Color3(0xFF / 255.0f,0xD6 / 255.0f, 0x7F / 255.0f),
+                                     Color3(0xB0 / 255.0f,0xA0 / 255.0f, 0x6F / 255.0f),
+                                     Color3(0xAF / 255.0f,0xBE / 255.0f, 0xD6 / 255.0f),
+                                     Color3(0x67 / 255.0f,0x1F / 255.0f, 0x81 / 255.0f),
+                                     Color3(0x0E / 255.0f,0x3E / 255.0f, 0x9A / 255.0f),
+                                     Color3(0xD6 / 255.0f,0x79 / 255.0f, 0x23 / 255.0f),
+                                     Color3(0x90 / 255.0f,0x1F / 255.0f, 0x76 / 255.0f),
+                                     Color3(0xA5 / 255.0f,0xCA / 255.0f, 0x18 / 255.0f),
+                                     Color3(0x89 / 255.0f,0x7D / 255.0f, 0x62 / 255.0f),
+                                     Color3(0xFF / 255.0f,0x9E / 255.0f, 0xCD / 255.0f),
+                                     Color3(0xA0 / 255.0f,0x6E / 255.0f, 0xB9 / 255.0f),
+                                     Color3(0xCD / 255.0f,0xA4 / 255.0f, 0xDE / 255.0f),
+                                     Color3(0xFD / 255.0f,0xC3 / 255.0f, 0x83 / 255.0f),
+                                     Color3(0x8A / 255.0f,0x12 / 255.0f, 0xA8 / 255.0f),
+                                     Color3(0x5F / 255.0f,0x31 / 255.0f, 0x09 / 255.0f),
+                                     Color3(0x96 / 255.0f,0x96 / 255.0f, 0x96 / 255.0f),
+                                     Color3(0x64 / 255.0f,0x64 / 255.0f, 0x64 / 255.0f),
+                                     Color3(0x73 / 255.0f,0x96 / 255.0f, 0xC8 / 255.0f),
+                                     Color3(0x7F / 255.0f,0xC4 / 255.0f, 0x75 / 255.0f),
+                                     Color3(0xFE / 255.0f,0xCC / 255.0f, 0xCF / 255.0f),
+                                     Color3(0xFF / 255.0f,0xC9 / 255.0f, 0x95 / 255.0f),
+                                     Color3(0xAA / 255.0f,0x7D / 255.0f, 0x55 / 255.0f),
+                                     Color3(0x44 / 255.0f,0x1A / 255.0f, 0x91 / 255.0f),
+                                     Color3(0x7B / 255.0f,0x5D / 255.0f, 0x41 / 255.0f),
+                                     Color3(0x1C / 255.0f,0x58 / 255.0f, 0xA7 / 255.0f),
+                                     Color3(0xBB / 255.0f,0x80 / 255.0f, 0x5A / 255.0f),
+                                     Color3(0xF9 / 255.0f,0xB7 / 255.0f, 0xA5 / 255.0f),
+                                     Color3(0x26 / 255.0f,0x46 / 255.0f, 0x9A / 255.0f),
+                                     Color3(0x48 / 255.0f,0x61 / 255.0f, 0xAC / 255.0f),
+                                     Color3(0xB7 / 255.0f,0xD4 / 255.0f, 0x25 / 255.0f),
+                                     Color3(0x9C / 255.0f,0xD6 / 255.0f, 0xCC / 255.0f),
+                                     Color3(0xDE / 255.0f,0xEA / 255.0f, 0x92 / 255.0f),
+                                     Color3(0xF9 / 255.0f,0xA7 / 255.0f, 0x77 / 255.0f),
+                                     Color3(0xAD / 255.0f,0x61 / 255.0f, 0x40 / 255.0f),
+                                     Color3(0xC8 / 255.0f,0xC8 / 255.0f, 0xC8 / 255.0f),
+                                     Color3(0xFC / 255.0f,0xAC / 255.0f, 0x00 / 255.0f),
+                                     Color3(0x9D / 255.0f,0xC3 / 255.0f, 0xF7 / 255.0f),
+                                     Color3(0x87 / 255.0f,0x2B / 255.0f, 0x17 / 255.0f),
+                                     Color3(0x8E / 255.0f,0x55 / 255.0f, 0x97 / 255.0f),
+                                     Color3(0x56 / 255.0f,0x4E / 255.0f, 0x9D / 255.0f),
+                                     Color3(0xFF / 255.0f,0xEC / 255.0f, 0x6C / 255.0f),
+                                     Color3(0x77 / 255.0f,0xC9 / 255.0f, 0xD8 / 255.0f),
+                                     Color3(0x19 / 255.0f,0x32 / 255.0f, 0x5A / 255.0f),
+                                     Color3(0x00 / 255.0f,0x45 / 255.0f, 0x1A / 255.0f),
+                                     Color3(0xFF / 255.0f,0x94 / 255.0f, 0xC2 / 255.0f),
+                                     Color3(0x35 / 255.0f,0x21 / 255.0f, 0x00 / 255.0f),
+                                     Color3(0xAB / 255.0f,0xD9 / 255.0f, 0xFF / 255.0f),
+                                     Color3(0x72 / 255.0f,0x00 / 255.0f, 0x12 / 255.0f),
+                                     Color3(0x46 / 255.0f,0x9B / 255.0f, 0xC3 / 255.0f),
+                                     Color3(0x68 / 255.0f,0xC3 / 255.0f, 0xE2 / 255.0f),
+                                     Color3(0xD3 / 255.0f,0xF2 / 255.0f, 0xEA / 255.0f),
+                                     Color3(0xE2 / 255.0f,0xF9 / 255.0f, 0x9A / 255.0f),
+                                     Color3(0x77 / 255.0f,0x77 / 255.0f, 0x4E / 255.0f),
+                                     Color3(0x88 / 255.0f,0x60 / 255.0f, 0x5E / 255.0f),
+                                     Color3(0xF7 / 255.0f,0x85 / 255.0f, 0xB1 / 255.0f),
+                                     Color3(0xFF / 255.0f,0x6D / 255.0f, 0x77 / 255.0f),
+                                     Color3(0xD8 / 255.0f,0x6D / 255.0f, 0x2C / 255.0f),
+                                     Color3(0x75 / 255.0f,0x65 / 255.0f, 0x7D / 255.0f),
+                                     Color3(0x70 / 255.0f,0x8E / 255.0f, 0x7C / 255.0f),
+                                     Color3(0x70 / 255.0f,0x81 / 255.0f, 0x9A / 255.0f),
+                                     Color3(0xD2 / 255.0f,0x77 / 255.0f, 0x44 / 255.0f),
+                                     Color3(0xF5 / 255.0f,0x86 / 255.0f, 0x24 / 255.0f),
+                                     Color3(0x91 / 255.0f,0x50 / 255.0f, 0x1C / 255.0f),
+                                     Color3(0xBC / 255.0f,0xB4 / 255.0f, 0xA5 / 255.0f),
+                                     Color3(0xFA / 255.0f,0x9C / 255.0f, 0x1C / 255.0f),
+                                     Color3(0xFF / 255.0f,0x80 / 255.0f, 0x14 / 255.0f),
+                                     Color3(0xCF / 255.0f,0x8A / 255.0f, 0x47 / 255.0f),
+                                     Color3(0x78 / 255.0f,0xFC / 255.0f, 0x78 / 255.0f)
+                                });
+  ldrawColors_ = QVector<uint16_t>({0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,22,23,25,26,27,28,29,30,31,68,69,70,71,72,73,74,77,78,84,85,86,89,92,100,110,112,115,118,120,125,128,151,191,212,216,218,219,226,232,272,288,295,308,313,320,321,322,323,326,330,335,351,353,366,373,378,379,450,462,484,503,507,508,509,510});
+  /*
   legalColors_.push_back(Color3(0.95f, 0.95f, 0.95f));//White
   legalColors_.push_back(Color3(0.15f, 0.15f, 0.15f));//Black
   legalColors_.push_back(Color3(1.0f, 0.0f, .00f));//Bright red
@@ -57,6 +148,14 @@ LegoCloud::LegoCloud()
   legalColors_.push_back(Color3(1.0f, 1.0f, 0.0f));//Bright yellow
   legalColors_.push_back(Color3(1.0f, 110.0f/255.0f, 0.0f));//Bright orange
   legalColors_.push_back(Color3(118.0f/255.0f, 45.0f/255.0f, 28.0f/255.0f));//Redish brown
+  legalColors_.push_back(Color3(138.0f/255.0f, 146.0f/255.0f, 141.0f/255.0f)); // Light gray
+  legalColors_.push_back(Color3(84.0f / 255.0f, 89.0f / 255.0f, 85.0f / 255.0f)); // Dark gray
+  legalColors_.push_back(Color3(0x7B / 255.0f, 0x5D / 255.0f, 0x41 / 255.0f)); // medium brown
+  legalColors_.push_back(Color3(0x73 / 255.0f, 0x96 / 255.0f, 0xC8 / 255.0f)); // medium blue*/
+  size_t i = 0;
+  for(const Color3& color : legalColors_) {
+      printf("%02X%02X%02XFF %zd\n",(uint8_t)(color[0]*255),(uint8_t)(color[1]*255),(uint8_t)(color[2]*255),++i);
+  }
 
   assert(DEFAULT_COLOR_ID < legalColors_.size());
 }
@@ -1766,4 +1865,61 @@ bool LegoCloud::canRemoveBrick(LegoBrick *brick)
     return true;
   else
     return false;
+}
+
+const QMap<BrickSize,std::string>& LegoCloud::ldrawParts() {
+    static QMap<BrickSize,std::string> ldrawParts_({
+                                                       {BrickSize(1,1), "3005.dat"},
+                                                       {BrickSize(1,2), "3004.dat"},
+                                                       {BrickSize(1,3), "3622.dat"},
+                                                       {BrickSize(1,4), "3010.dat"},
+                                                       {BrickSize(1,6), "3009.dat"},
+                                                       {BrickSize(1,8), "3008.dat"},
+                                                       {BrickSize(1,10),"6111.dat"},
+                                                       {BrickSize(2,2), "3003.dat"},
+                                                       {BrickSize(2,3), "3002.dat"},
+                                                       {BrickSize(2,4), "3001.dat"},
+                                                       {BrickSize(2,6), "2456.dat"},
+                                                       {BrickSize(2,8), "3007.dat"},
+                                                       {BrickSize(2,10),"3006.dat"},
+                                                   });
+    return ldrawParts_;
+}
+
+std::string LegoCloud::toLDrawLine(const LegoBrick& brick) const {
+    BrickSize size = brick.getSize();
+    float transform[3][4] = {
+        {1, 0, 0, 10.0f*size.second}, // All the basic LDraw bricks are longer in X than Z
+        {0, 1, 0, -24.0f*brick.getLevel()}, // -Y up
+        {0, 0, 1, 10.0f*size.first}, // +Z into screen
+    };
+    if(size.first == brick.getSizeX()) {
+        std::swap(transform[0],transform[2]);
+    }
+
+    transform[0][3] += 20.0f * brick.getPosX();
+    transform[2][3] += 20.0f * brick.getPosY();
+    std::ostringstream buffer;
+    buffer << "1 " << ldrawColors_[brick.getColorId()];
+    // transform
+    buffer << " " << transform[0][3] << " " << transform[1][3] << " " << -transform[2][3];
+    // rotation
+    buffer << " " << transform[0][0] << " " << transform[0][1] << " " << -transform[0][2];
+    buffer << " " << transform[1][0] << " " << transform[1][1] << " " << -transform[1][2];
+    buffer << " " << transform[2][0] << " " << transform[2][1] << " " << -transform[2][2];
+    buffer << " " << ldrawParts()[size];
+    return buffer.str();
+}
+
+std::string LegoCloud::toLDraw() const {
+    std::ostringstream buffer;
+    buffer << "0 Model exported by brick" << std::endl;
+    for(int i = 0; i < bricks_.size(); ++i) {
+        if(i){ buffer << "0 STEP" << std::endl; }
+        const QList<LegoBrick>& layer = bricks_[i];
+        for(int j = 0; j < layer.size(); ++j) {
+            buffer << toLDrawLine(layer[j]) << std::endl;
+        }
+    }
+    return buffer.str();
 }

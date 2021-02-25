@@ -432,6 +432,22 @@ void AssemblyWidget::on_objExportButton_pressed()
   legoCloudNode->exportToObj(filename);
 }
 
+void AssemblyWidget::on_ldrExportButton_pressed()
+{
+    LegoCloudNode* legoCloudNode = plugin_->getLegoCloudNode();
+    if(!legoCloudNode)
+      return;
+
+    QString filename = QFileDialog::getSaveFileName(this, "Save as", "", "LDraw (*.ldr)");
+
+    if(filename.isNull())
+    {
+      return;
+    }
+
+    legoCloudNode->exportToLdr(filename);
+}
+
 void AssemblyWidget::on_printStatsButton_pressed()
 {
   LegoCloudNode* legoCloudNode = plugin_->getLegoCloudNode();
@@ -622,7 +638,7 @@ void AssemblyWidget::loadFile(const QString &filePath, int voxelizationResolutio
 #ifdef WIN32
     QString command("\"" + binvoxProgramFileInfo.absoluteFilePath() + "\" -d "+ QString::number(voxelizationResolution) + " \"" + scaledFilePath + "\"");
 #else
-    QString command("\"" + binvoxProgramFileInfo.absoluteFilePath()+ "\" -pb -d "+ QString::number(voxelizationResolution) + " \"" +scaledFilePath + "\"");
+    QString command("\"" + binvoxProgramFileInfo.absoluteFilePath()+ "\" -e -mb -pb -d "+ QString::number(voxelizationResolution) + " \"" +scaledFilePath + "\"");
 #endif
 //    QString command(binvoxProgramFileInfo.absoluteFilePath()+ " -d "+ QString::number(voxelizationResolution) + " " +filePath);
     std::cout << "Running " << qPrintable(command) << std::endl;

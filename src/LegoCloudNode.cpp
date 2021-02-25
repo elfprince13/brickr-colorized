@@ -520,6 +520,20 @@ void LegoCloudNode::drawInstructions(QGraphicsScene *scene, bool hintLayerBelow)
   }
 }
 
+void LegoCloudNode::exportToLdr(QString filename)
+{
+    std::ofstream ldrFile(filename.toStdString().c_str());
+    if(!ldrFile.is_open())
+    {
+        std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
+    }
+    else
+    {
+        ldrFile << legoCloud_->toLDraw();
+    }
+    ldrFile.close();
+}
+
 void LegoCloudNode::exportToObj(QString filename)
 {
   //Create the file

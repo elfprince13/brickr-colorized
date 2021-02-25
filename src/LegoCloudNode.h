@@ -57,6 +57,7 @@ public:
 
   void drawInstructions(QGraphicsScene* scene, bool hintLayerBelow);
   void exportToObj(QString filename);
+  void exportToLdr(QString filename);
 
   Vector3 minPoint() { return boundsMin_; }
   Vector3 maxPoint() { return boundsMax_; }
