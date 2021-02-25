@@ -683,12 +683,12 @@ void LegoCloudNode::exportToObj(QString filename)
       objFile << "s off" << std::endl;
 
       //Write box faces
-      objFile << "f " << vertexIndex+0 << " " << vertexIndex+1 << " " << vertexIndex+3 << " " << vertexIndex+2 << std::endl;//left
-      objFile << "f " << vertexIndex+4 << " " << vertexIndex+6 << " " << vertexIndex+7 << " " << vertexIndex+5 << std::endl;//right
-      objFile << "f " << vertexIndex+0 << " " << vertexIndex+4 << " " << vertexIndex+5 << " " << vertexIndex+1 << std::endl;//bottom
-      objFile << "f " << vertexIndex+2 << " " << vertexIndex+3 << " " << vertexIndex+7 << " " << vertexIndex+6 << std::endl;//top
-      objFile << "f " << vertexIndex+0 << " " << vertexIndex+2 << " " << vertexIndex+6 << " " << vertexIndex+4 << std::endl;//back
-      objFile << "f " << vertexIndex+1 << " " << vertexIndex+5 << " " << vertexIndex+7 << " " << vertexIndex+3 << std::endl;//front
+      if(legoCloud_->visible(brick, outside, {-1, 0, 0})) objFile << "f " << vertexIndex+0 << " " << vertexIndex+1 << " " << vertexIndex+3 << " " << vertexIndex+2 << std::endl;//left
+      if(legoCloud_->visible(brick, outside, {brick->getSizeX(), 0, 0})) objFile << "f " << vertexIndex+4 << " " << vertexIndex+6 << " " << vertexIndex+7 << " " << vertexIndex+5 << std::endl;//right
+      if(legoCloud_->visible(brick, outside, {0, 0, -1})) objFile << "f " << vertexIndex+0 << " " << vertexIndex+4 << " " << vertexIndex+5 << " " << vertexIndex+1 << std::endl;//bottom
+      if(legoCloud_->visible(brick, outside, {0, 0, 1})) objFile << "f " << vertexIndex+2 << " " << vertexIndex+3 << " " << vertexIndex+7 << " " << vertexIndex+6 << std::endl;//top
+      if(legoCloud_->visible(brick, outside, {0, -1, 0})) objFile << "f " << vertexIndex+0 << " " << vertexIndex+2 << " " << vertexIndex+6 << " " << vertexIndex+4 << std::endl;//back
+      if(legoCloud_->visible(brick, outside, {0, brick->getSizeY(), 0})) objFile << "f " << vertexIndex+1 << " " << vertexIndex+5 << " " << vertexIndex+7 << " " << vertexIndex+3 << std::endl;//front
       /*objFile << "f " << vertexIndex+0 << " " << vertexIndex+1 << " " << vertexIndex+3 << std::endl;//left
       objFile << "f " << vertexIndex+0 << " " << vertexIndex+3 << " " << vertexIndex+2 << std::endl;//left
 

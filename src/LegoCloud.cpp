@@ -1947,3 +1947,48 @@ const QVector<QVector<QVector<LegoBrick*> > >& LegoCloud::getVoxelGrid() const {
 QVector<QVector<QVector<LegoBrick*> > >& LegoCloud::getVoxelGrid() {
     return voxelGrid_;
 }
+
+bool LegoCloud::visible(const LegoBrick* brick, const LegoBrick* outside, const VoxelCoord& dir) const {
+    auto pred = [this,&outside](const VoxelCoord& c) {
+        bool noLowerNeighbor = !(VoxelCoord{-1,-1,-1} << c);
+        bool noUpperNeighbor = !(c << VoxelCoord{width_, depth_, height_});
+        const LegoBrick* exteriorNeighbor = (noLowerNeighbor || noUpperNeighbor) ? nullptr : voxelGrid_[c.z][c.x][c.y];
+        //std::cout << "\tNeighboring position (" << c.x << ", " << c.y << ", " << c.z << ") ";
+        //std::cout << "has: no lower neighbor? " << noLowerNeighbor << " no upper neighbor? " << noUpperNeighbor;
+        //std::cout << " exteriorNeighbor (" << (void*)exteriorNeighbor << ")" << " = outside (" << (void*)outside << ")" << std::endl;
+        return noLowerNeighbor || noUpperNeighbor || (exteriorNeighbor == outside);
+    };
+    const int baseX = brick->getPosX();
+    const int baseY = brick->getPosY();
+    const int baseZ = brick->getLevel();
+    //std::cout << "Checking " << brick->getSizeX() << " x " << brick->getSizeY() << " brick at ";
+    //std::cout << "(" << baseX << ", " << baseY << ", " << baseZ << ")" << std::endl;
+    if(dir.x) {
+        for(int j = 0; j < brick->getSizeY(); ++j ) {
+            if(pred(VoxelCoord{baseX, baseY + j, baseZ} + dir)) {
+                //std::cout << "\tpassed" << std::endl;
+                return true;
+            }
+        }
+    } else if(dir.y) {
+        for(int i = 0; i < brick->getSizeX(); ++i ) {
+            if(pred(VoxelCoord{baseX + i, baseY, baseZ} + dir)) {
+                //std::cout << "\tpassed" << std::endl;
+                return true;
+            }
+        }
+    } else if(dir.z){
+        for(int i = 0; i < brick->getSizeX(); ++i ) {
+            for(int j = 0; j < brick->getSizeY(); ++j ) {
+                if(pred(VoxelCoord{baseX + i, baseY + j, baseZ} + dir)) {
+                    //std::cout << "\tpassed" << std::endl;
+                    return true;
+                }
+            }
+        }
+    } else {
+        throw std::logic_error("directionless");
+    }
+    //std::cout << "\tfailed" << std::endl;
+    return false;
+}

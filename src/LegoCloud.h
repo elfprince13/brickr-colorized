@@ -30,6 +30,10 @@ struct VoxelCoord {
    inline bool operator<<(const VoxelCoord& o) const {
        return (x < o.x) && (y < o.y) && (z < o.z);
    }
+
+   inline VoxelCoord operator+(const VoxelCoord& o) const {
+       return { x + o.x, y + o.y, z + o.z};
+   }
 };
 
 namespace brickr{
@@ -106,6 +110,10 @@ public:
   QVector<QVector<QVector<LegoBrick*> > >& getVoxelGrid();
 
   QVector<VoxelCoord> getL1Neighbors(const VoxelCoord&) const;
+
+  // we could try cutting out only the visible parts of a face
+  // but that's hard and will actually increase poly count!
+  bool visible(const LegoBrick* brick, const LegoBrick* outside, const VoxelCoord& dir) const;
 
 private:
   LegoBrick *addBrick(int level, int posX, int posY, int sizeX, int sizeY);//Level must already exist
