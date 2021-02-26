@@ -10,6 +10,8 @@
 #include "LegoCloud.h"
 #include "LegoGraph.h"
 
+#include <boost/optional.hpp>
+
 #ifdef WIN32
 #include <windows.h>
 #include <gl/GLU.h>
@@ -64,16 +66,6 @@ struct LazyVertex {
     }
 };
 
-template<typename ...VI>
-void writeFace(std::ostream& out, VI ...vi) {
-    std::array<int, sizeof...(VI)> indices = {vi...};
-    out << "f";
-    for(size_t i = 0; i < sizeof...(VI); ++i){
-        out << " " << indices[i];
-    }
-    out << std::endl;
-}
-
 template<size_t ...I> struct integer_sequence {};
 template<size_t N, size_t ...I>
 struct partial_index_sequence {
@@ -86,9 +78,41 @@ struct partial_index_sequence<0, I...> {
 
 template<size_t N> using index_sequence = typename partial_index_sequence<N>::type;
 
+template<size_t N>
+std::array<int, N> intCollection(const std::array<int, N>& i) { return i; }
+
 template<typename Collection, size_t ...I>
-void writeFace(std::ostream& out, const Collection& coll, integer_sequence<I...>) {
-    writeFace(out, coll[I]...);
+std::array<int, sizeof...(I)> intCollection(QPair<Collection, integer_sequence<I...>>& pair) {
+    return {pair.first[I] ...};
+}
+
+QVector<int> intCollection(const QVector<int>& v) { return v; }
+
+QVector<int> intCollection(boost::none_t) { return QVector<int>(); }
+
+
+
+template<typename Vp, typename Vt = boost::none_t, typename Vn = boost::none_t>
+void writeFace(std::ostream& out, Vp vp, Vt vt = Vt(), Vn vn = Vn()) {
+    auto vpIndices = intCollection(vp);
+    auto vtIndices = intCollection(vt);
+    auto vnIndices = intCollection(vn);
+    out << "f";
+    for(size_t i = 0; i < vpIndices.size(); ++i){
+        out << " " << vpIndices[i];
+        if(vtIndices.size() || vnIndices.size()) {
+            out << "/";
+            if(vtIndices.size()) {
+                out << vtIndices[i];
+            } else {
+                out << "/";
+            }
+            if(vnIndices.size()){
+                out << vnIndices[i];
+            }
+        }
+    }
+    out << std::endl;
 }
 
 LegoCloudNode::LegoCloudNode()
@@ -605,192 +629,256 @@ void LegoCloudNode::exportToLdr(QString filename)
 
 void LegoCloudNode::exportToObj(QString filename)
 {
-
-  const float LEGO_VERTICAL_TOLERANCE = 0.0001f;
-  int brickIndex = 0;
-  int vertexIndex = 1;
-  //const QList<LegoBrick*>& outterBricks = legoCloud_->getOuterBricks();
-  std::cout << "Flood filling open space markers...";
-  LegoBrick *outside = new LegoBrick(-1, 0, 0, legoCloud_->getWidth(), legoCloud_->getDepth());
-  QMap<VoxelCoord, QVector<VoxelCoord>> queue;
-  auto visit = [&queue,&outside,this](const VoxelCoord& vc) {
-      auto& voxelGrid = legoCloud_->getVoxelGrid();
-      LegoBrick*& voxel = voxelGrid[vc.z][vc.x][vc.y];
-      if(nullptr == voxel) {
-          voxel = outside;
-          QVector<VoxelCoord> neighbors = legoCloud_->getL1Neighbors(vc);
-          brickr::erase_if(neighbors, [&voxelGrid](const VoxelCoord& vc){
-              return nullptr != voxelGrid[vc.z][vc.x][vc.y];
-          });
-          queue.insert(vc,neighbors);
-      }
-  };
-  for(int x = 0; x < legoCloud_->getWidth(); ++x) {
-      for(int y = 0; y < legoCloud_->getDepth(); ++y) {
-          visit({x, y, 0});
-          visit({x, y, legoCloud_->getHeight() - 1});
-      }
-  }
-  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
-      for(int y = 0; y < legoCloud_->getDepth(); ++y) {
-          visit({0, y, z});
-          visit({legoCloud_->getWidth() - 1, y, z});
-      }
-  }
-  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
-      for(int x = 0; x < legoCloud_->getWidth(); ++x) {
-          visit({x, 0, z});
-          visit({x, legoCloud_->getDepth() - 1, z});
-      }
-  }
-  while(queue.size()) {
-      QVector<VoxelCoord> neighbors = queue.take(queue.firstKey());
-      for(auto it = neighbors.begin(); it != neighbors.end(); ++it){
-          visit(*it);
-      }
-  }
-  std::cout << "Done" << std::endl;
-  //Create the file
-  std::ofstream objFile (filename.toStdString().c_str());
-  if (!objFile.is_open())
-  {
-    std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
-  }
-
-  VertexCache<OBJVertStream> xyzCache({objFile, "", 3});
-
-  for(int level = 0; level < legoCloud_->getLevelNumber(); level++)
-  {
-    for(QList<LegoBrick>::const_iterator brickIt = legoCloud_->getBricks(level).begin(); brickIt != legoCloud_->getBricks(level).constEnd(); brickIt++)
-    {
-      const LegoBrick* brick = &(*brickIt);
-
-      Vector3 p1;//Back corner down left
-      p1[0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-      p1[1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
-      p1[2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-      //p1 *= 10.0;
-
-      Vector3 p2;//Front corner up right
-      p2[0] = p1[0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-      p2[1] = p1[1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
-      p2[2] = p1[2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-      //p2 *= 10.0;
-
-      Vector3 knobCenter;//Center of back left knob (top)
-      knobCenter[0] = p1[0] + LEGO_KNOB_DISTANCE/2.0;
-      knobCenter[1] = p1[1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
-      knobCenter[2] = p1[2] + LEGO_KNOB_DISTANCE/2.0;
-
-
-      //objFile << "g default" << std::endl;
-      //Write 8 vertices of box
-      LazyVertex boxVerts[8] = {
-          {Vector3(p1[0], p1[1], p1[2]), &xyzCache},
-          {Vector3(p1[0], p1[1], p2[2]), &xyzCache},
-          {Vector3(p1[0], p2[1], p1[2]), &xyzCache},
-          {Vector3(p1[0], p2[1], p2[2]), &xyzCache},
-          {Vector3(p2[0], p1[1], p1[2]), &xyzCache},
-          {Vector3(p2[0], p1[1], p2[2]), &xyzCache},
-          {Vector3(p2[0], p2[1], p1[2]), &xyzCache},
-          {Vector3(p2[0], p2[1], p2[2]), &xyzCache}
+  if(KNOB_RESOLUTION_OBJ_EXPORT % 4){
+      std::cerr << "This code path doesn't work if the knob resolution is not a multiple of 4" << std::endl;
+      std::cerr << "But it should be easy to fix!" << std::endl;
+  } else {
+      const float LEGO_VERTICAL_TOLERANCE = 0.0001f;
+      int brickIndex = 0;
+      int vertexIndex = 1;
+      //const QList<LegoBrick*>& outterBricks = legoCloud_->getOuterBricks();
+      std::cout << "Flood filling open space markers...";
+      LegoBrick *outside = new LegoBrick(-1, 0, 0, legoCloud_->getWidth(), legoCloud_->getDepth());
+      QMap<VoxelCoord, QVector<VoxelCoord>> queue;
+      auto visit = [&queue,&outside,this](const VoxelCoord& vc) {
+          auto& voxelGrid = legoCloud_->getVoxelGrid();
+          LegoBrick*& voxel = voxelGrid[vc.z][vc.x][vc.y];
+          if(nullptr == voxel) {
+              voxel = outside;
+              QVector<VoxelCoord> neighbors = legoCloud_->getL1Neighbors(vc);
+              brickr::erase_if(neighbors, [&voxelGrid](const VoxelCoord& vc){
+                  return nullptr != voxelGrid[vc.z][vc.x][vc.y];
+              });
+              queue.insert(vc,neighbors);
+          }
       };
-
-      QVector<QVector<bool>> visibleStud(brick->getSizeX());
-      QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
-      int studCount = 0;
-
-      //Write knobs vertices
-      for(int x = 0; x < brick->getSizeX(); ++x)
-      {
-          visibleStud[x] = QVector<bool>(brick->getSizeY());
-          studIndices[x] = QVector<QVector<LazyVertex>>(brick->getSizeY());
-        for(int y = 0; y < brick->getSizeY(); ++y)
-        {
-            visibleStud[x][y] = ((1 + level) == legoCloud_->getLevelNumber()) || (outside == legoCloud_->getVoxelGrid()[level+1][x+brickIt->getPosX()][y+brickIt->getPosY()]);
-            if(visibleStud[x][y])
-            {
-                studIndices[x][y] = QVector<LazyVertex>(2 * KNOB_RESOLUTION_OBJ_EXPORT);
-
-                for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-                {
-                  double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
-                  studIndices[x][y][i] = LazyVertex{
-                      Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
-                              knobCenter[1],
-                              knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
-                  studIndices[x][y][KNOB_RESOLUTION_OBJ_EXPORT+i] = LazyVertex{
-                      Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
-                              knobCenter[1] - LEGO_KNOB_HEIGHT,
-                              knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
-                }
-
-            } else {
-                studIndices[x][y] = QVector<LazyVertex>(0);
-            }
-        }
-      }
-
-      objFile << "s off" << std::endl;
-
-      //Write box faces
-      if(legoCloud_->visible(brick, outside, {-1, 0, 0})) writeFace(objFile, boxVerts[0], boxVerts[1], boxVerts[3], boxVerts[2]);//left
-      if(legoCloud_->visible(brick, outside, {brick->getSizeX(), 0, 0})) writeFace(objFile, boxVerts[4], boxVerts[6], boxVerts[7], boxVerts[5]);//right
-      if(legoCloud_->visible(brick, outside, {0, 0, -1})) writeFace(objFile, boxVerts[0], boxVerts[4], boxVerts[5], boxVerts[1]);//bottom
-      if(legoCloud_->visible(brick, outside, {0, 0, 1})) writeFace(objFile, boxVerts[2], boxVerts[3], boxVerts[7], boxVerts[6]);//top
-      if(legoCloud_->visible(brick, outside, {0, -1, 0})) writeFace(objFile, boxVerts[0], boxVerts[2], boxVerts[6], boxVerts[4]);//back
-      if(legoCloud_->visible(brick, outside, {0, brick->getSizeY(), 0})) writeFace(objFile, boxVerts[1], boxVerts[5], boxVerts[7], boxVerts[3]);//front
-
-      //Write top caps face
-      for(int x = 0; x < brick->getSizeX(); ++x)
-      {
-        for(int y = 0; y < brick->getSizeY(); ++y)
-        {
-            if(visibleStud[x][y]){
-                auto& knobIndex = studIndices[x][y];
-                writeFace(objFile, knobIndex, index_sequence<KNOB_RESOLUTION_OBJ_EXPORT>());
-            }
-        }
-      }
-
-      //Write cylinder faces
-      objFile << "s 1" << std::endl;
-      for(int x = 0; x < brick->getSizeX(); ++x)
-      {
-        for(int y = 0; y < brick->getSizeY(); ++y)
-        {
-            if(visibleStud[x][y]){
-                auto& knobIndex = studIndices[x][y];
-
-                for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-                {
-                    int j = (i + 1) % KNOB_RESOLUTION_OBJ_EXPORT;
-                    writeFace(objFile, knobIndex[i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + j], knobIndex[j]);
-
-                }
-            }
-        }
-      }
-
-      brickIndex++;
-      vertexIndex += 8 + studCount*(2*KNOB_RESOLUTION_OBJ_EXPORT);
-    }
-  }
-
-
-  objFile.close();
-
-  std::cout << "Clearing open space markers...";
-  for(int z = 0; z < legoCloud_->getHeight(); ++z) {
       for(int x = 0; x < legoCloud_->getWidth(); ++x) {
           for(int y = 0; y < legoCloud_->getDepth(); ++y) {
-              LegoBrick*& voxel = legoCloud_->getVoxelGrid()[z][x][y];
-              if(outside == voxel){
-                  voxel = nullptr;
+              visit({x, y, 0});
+              visit({x, y, legoCloud_->getHeight() - 1});
+          }
+      }
+      for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+          for(int y = 0; y < legoCloud_->getDepth(); ++y) {
+              visit({0, y, z});
+              visit({legoCloud_->getWidth() - 1, y, z});
+          }
+      }
+      for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+          for(int x = 0; x < legoCloud_->getWidth(); ++x) {
+              visit({x, 0, z});
+              visit({x, legoCloud_->getDepth() - 1, z});
+          }
+      }
+      while(queue.size()) {
+          QVector<VoxelCoord> neighbors = queue.take(queue.firstKey());
+          for(auto it = neighbors.begin(); it != neighbors.end(); ++it){
+              visit(*it);
+          }
+      }
+      std::cout << "Done" << std::endl;
+      //Create the file
+      std::ofstream objFile (filename.toStdString().c_str());
+      if (!objFile.is_open())
+      {
+        std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
+      }
+
+      for(int i = 1; i <= KNOB_RESOLUTION_OBJ_EXPORT; ++i){
+          // must be multiple of 4 to get cardinal directions encoded as well!
+          double angle = -(2*M_PI)*(i/double(KNOB_RESOLUTION_OBJ_EXPORT));
+          Vector3 normal(cos(angle),0,sin(angle)); // iterate clockwise: right, back, left, front
+          objFile << "vn " << normal << std::endl;
+      }
+      objFile << "vn " << Vector3(0, 1, 0) << std::endl; // up
+      objFile << "vn " << Vector3(0, -1, 0) << std::endl; // down
+
+      VertexCache<OBJVertStream> xyzCache({objFile, "", 3});
+      for(int level = 0; level < legoCloud_->getLevelNumber(); level++)
+      {
+        for(QList<LegoBrick>::const_iterator brickIt = legoCloud_->getBricks(level).begin(); brickIt != legoCloud_->getBricks(level).constEnd(); brickIt++)
+        {
+          const LegoBrick* brick = &(*brickIt);
+
+          Vector3 p1;//Back corner down left
+          p1[0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          p1[1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
+          p1[2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          //p1 *= 10.0;
+
+          Vector3 p2;//Front corner up right
+          p2[0] = p1[0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+          p2[1] = p1[1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
+          p2[2] = p1[2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+          //p2 *= 10.0;
+
+          Vector3 knobCenter;//Center of back left knob (top)
+          knobCenter[0] = p1[0] + LEGO_KNOB_DISTANCE/2.0;
+          knobCenter[1] = p1[1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
+          knobCenter[2] = p1[2] + LEGO_KNOB_DISTANCE/2.0;
+
+
+          //objFile << "g default" << std::endl;
+          //Write 8 vertices of box
+          LazyVertex boxVerts[8] = {
+              {Vector3(p1[0], p1[1], p1[2]), &xyzCache},
+              {Vector3(p1[0], p1[1], p2[2]), &xyzCache},
+              {Vector3(p1[0], p2[1], p1[2]), &xyzCache},
+              {Vector3(p1[0], p2[1], p2[2]), &xyzCache},
+              {Vector3(p2[0], p1[1], p1[2]), &xyzCache},
+              {Vector3(p2[0], p1[1], p2[2]), &xyzCache},
+              {Vector3(p2[0], p2[1], p1[2]), &xyzCache},
+              {Vector3(p2[0], p2[1], p2[2]), &xyzCache}
+          };
+
+          QVector<QVector<bool>> visibleStud(brick->getSizeX());
+          QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
+          int studCount = 0;
+
+          //Write knobs vertices
+          for(int x = 0; x < brick->getSizeX(); ++x)
+          {
+              visibleStud[x] = QVector<bool>(brick->getSizeY());
+              studIndices[x] = QVector<QVector<LazyVertex>>(brick->getSizeY());
+            for(int y = 0; y < brick->getSizeY(); ++y)
+            {
+                visibleStud[x][y] = ((1 + level) == legoCloud_->getLevelNumber()) || (outside == legoCloud_->getVoxelGrid()[level+1][x+brickIt->getPosX()][y+brickIt->getPosY()]);
+                if(visibleStud[x][y])
+                {
+                    studIndices[x][y] = QVector<LazyVertex>(2 * KNOB_RESOLUTION_OBJ_EXPORT);
+
+                    for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                    {
+                      double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
+                      studIndices[x][y][i] = LazyVertex{
+                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
+                                  knobCenter[1],
+                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
+                      studIndices[x][y][KNOB_RESOLUTION_OBJ_EXPORT+i] = LazyVertex{
+                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
+                                  knobCenter[1] - LEGO_KNOB_HEIGHT,
+                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
+                    }
+
+                } else {
+                    studIndices[x][y] = QVector<LazyVertex>(0);
+                }
+            }
+          }
+          //objFile << "s off" << std::endl;
+          //Write box faces
+          using QuadIdx = std::array<int,4>;
+          if(legoCloud_->visible(brick, outside, {-1, 0, 0})) {
+              //left
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 2;
+              writeFace(objFile,
+                        QuadIdx{boxVerts[0], boxVerts[1], boxVerts[3], boxVerts[2]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {brick->getSizeX(), 0, 0})) {
+              //right
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT;
+              writeFace(objFile,
+                        QuadIdx{boxVerts[4], boxVerts[6], boxVerts[7], boxVerts[5]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {0, 0, -1})) {
+              //bottom
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
+              writeFace(objFile,
+                        QuadIdx{boxVerts[0], boxVerts[4], boxVerts[5], boxVerts[1]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {0, 0, 1})) {
+              //top
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
+              writeFace(objFile,
+                        QuadIdx{boxVerts[2], boxVerts[3], boxVerts[7], boxVerts[6]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {0, -1, 0})) {
+              //back
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 4;
+              writeFace(objFile,
+                        QuadIdx{boxVerts[0], boxVerts[2], boxVerts[6], boxVerts[4]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {0, brick->getSizeY(), 0})) {
+              //front
+              int normIdx = 3 * (KNOB_RESOLUTION_OBJ_EXPORT / 4);
+              writeFace(objFile,
+                        QuadIdx{boxVerts[1], boxVerts[5], boxVerts[7], boxVerts[3]},
+                        boost::none,
+                        QuadIdx{normIdx, normIdx, normIdx});
+          }
+
+          using CapIdx = std::array<int, KNOB_RESOLUTION_OBJ_EXPORT>;
+          CapIdx capNorm;
+          capNorm.fill(KNOB_RESOLUTION_OBJ_EXPORT + 1);
+          //Write top caps face
+          for(int x = 0; x < brick->getSizeX(); ++x)
+          {
+            for(int y = 0; y < brick->getSizeY(); ++y)
+            {
+                if(visibleStud[x][y]){
+                    auto& knobIndex = studIndices[x][y];
+                    writeFace(objFile,
+                              qMakePair(knobIndex, index_sequence<KNOB_RESOLUTION_OBJ_EXPORT>()),
+                              boost::none,
+                              capNorm);
+                }
+            }
+          }
+
+          //Write cylinder faces
+          //objFile << "s 1" << std::endl;
+          for(int x = 0; x < brick->getSizeX(); ++x)
+          {
+            for(int y = 0; y < brick->getSizeY(); ++y)
+            {
+                if(visibleStud[x][y]){
+                    auto& knobIndex = studIndices[x][y];
+
+                    for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                    {
+                        int j = (i + 1) % KNOB_RESOLUTION_OBJ_EXPORT;
+                        int iNorm = i ? i : KNOB_RESOLUTION_OBJ_EXPORT; // un-mod
+                        int jNorm = j ? j : KNOB_RESOLUTION_OBJ_EXPORT; // un-mod
+                        writeFace(objFile,
+                                  QuadIdx{knobIndex[i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + j], knobIndex[j]},
+                                  boost::none,
+                                  QuadIdx{iNorm, iNorm, jNorm, jNorm});
+
+                    }
+                }
+            }
+          }
+
+          brickIndex++;
+          vertexIndex += 8 + studCount*(2*KNOB_RESOLUTION_OBJ_EXPORT);
+        }
+      }
+
+
+      objFile.close();
+
+      std::cout << "Clearing open space markers...";
+      for(int z = 0; z < legoCloud_->getHeight(); ++z) {
+          for(int x = 0; x < legoCloud_->getWidth(); ++x) {
+              for(int y = 0; y < legoCloud_->getDepth(); ++y) {
+                  LegoBrick*& voxel = legoCloud_->getVoxelGrid()[z][x][y];
+                  if(outside == voxel){
+                      voxel = nullptr;
+                  }
               }
           }
       }
+      delete outside;
+      std::cout << "Done" << std::endl;
   }
-  delete outside;
-  std::cout << "Done" << std::endl;
 }
