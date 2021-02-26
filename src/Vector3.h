@@ -128,6 +128,22 @@ struct Vector3
       stream << a.x() << " " << a.y() << " " << a.z();
       return stream;
     }
+
+    inline bool operator<(const Vector3& o) const {
+        return ((x() < o.x())
+                ? true
+                : ((x() == o.x())
+                   ? ((y() < o.y())
+                      ? true
+                      : ((y() == o.y())
+                         ? (z() < o.z())
+                         : false))
+                   : false));
+    }
+
+    inline bool operator==(const Vector3& o) const {
+        return (x() == o.x()) && (y() == o.y()) && (z() == o.z());
+    }
 };
 
 inline float dot(const Vector3 &a, const Vector3 &b)
