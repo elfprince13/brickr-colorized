@@ -76,7 +76,7 @@ struct partial_index_sequence<0, I...> {
     using type = integer_sequence<0, I...>;
 };
 
-template<size_t N> using index_sequence = typename partial_index_sequence<N>::type;
+template<size_t N> using index_sequence = typename partial_index_sequence<N - 1>::type;
 
 template<size_t N>
 std::array<int, N> intCollection(const std::array<int, N>& i) { return i; }
@@ -86,14 +86,32 @@ std::array<int, sizeof...(I)> intCollection(QPair<Collection, integer_sequence<I
     return {pair.first[I] ...};
 }
 
+template<typename Elem, typename std::enable_if<!std::is_same<Elem, int>::value, size_t>::type N>
+std::array<int, N> intCollection(std::array<Elem, N>& e) {
+    auto conversionPair = qMakePair(e, index_sequence<N>());
+    return intCollection(conversionPair);
+}
+
 QVector<int> intCollection(const QVector<int>& v) { return v; }
 
 QVector<int> intCollection(boost::none_t) { return QVector<int>(); }
 
+template<typename F, size_t ...I, size_t ...J>
+auto unrollLoop2D(F f, integer_sequence<I...>, integer_sequence<J...>) -> std::array<std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)>, sizeof...(I)> {
+    auto curryF = [&f](size_t i) -> std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)> {
+        return {
+          f(i, J) ...
+        };
+    };
+    return {
+      curryF(I) ...
+    };
+}
+
 
 
 template<typename Vp, typename Vt = boost::none_t, typename Vn = boost::none_t>
-void writeFace(std::ostream& out, Vp vp, Vt vt = Vt(), Vn vn = Vn()) {
+std::ostream& writeFace(std::ostream& out, Vp vp, Vt vt = Vt(), Vn vn = Vn()) {
     auto vpIndices = intCollection(vp);
     auto vtIndices = intCollection(vt);
     auto vnIndices = intCollection(vn);
@@ -111,7 +129,28 @@ void writeFace(std::ostream& out, Vp vp, Vt vt = Vt(), Vn vn = Vn()) {
             }
         }
     }
-    out << std::endl;
+    return (out << std::endl);
+}
+
+template<typename Vp, typename Vt = boost::none_t, typename Vn = boost::none_t>
+struct LazyFace {
+    Vp vp;
+    Vt vt;
+    Vn vn;
+private:
+    bool converted;
+public:
+    LazyFace(Vp vpI, Vt vtI = Vt(), Vn vnI = Vn())
+    : vp(vpI), vt(vtI), vn(vnI), converted(false) {}
+    template<typename Vp_, typename Vt_, typename Vn_>
+    friend std::ostream& operator<<(std::ostream& os, const LazyFace<Vp_, Vt_, Vn_>& lf);
+};
+
+template<typename Vp, typename Vt, typename Vn>
+std::ostream& operator<<(std::ostream& os, const LazyFace<Vp, Vt, Vn>& lf) {
+    return (lf.converted
+            ? os
+            : ((lf.converted = true), writeFace(lf.vp, lf.vt, lf.vn)));
 }
 
 LegoCloudNode::LegoCloudNode()
@@ -707,36 +746,53 @@ void LegoCloudNode::exportToObj(QString filename)
         {
           const LegoBrick* brick = &(*brickIt);
 
-          Vector3 p1;//Back corner down left
-          p1[0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-          p1[1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
-          p1[2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-          //p1 *= 10.0;
+          Vector3 p[2];
+          //Back corner down left
+          p[0][0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          p[0][1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
+          p[0][2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          //p[0] *= 10.0;
 
-          Vector3 p2;//Front corner up right
-          p2[0] = p1[0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-          p2[1] = p1[1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
-          p2[2] = p1[2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-          //p2 *= 10.0;
+          //Front corner up right
+          p[1][0] = p[0][0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+          p[1][1] = p[0][1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
+          p[1][2] = p[0][2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+          //p[1] *= 10.0;
 
           Vector3 knobCenter;//Center of back left knob (top)
-          knobCenter[0] = p1[0] + LEGO_KNOB_DISTANCE/2.0;
-          knobCenter[1] = p1[1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
-          knobCenter[2] = p1[2] + LEGO_KNOB_DISTANCE/2.0;
+          knobCenter[0] = p[0][0] + LEGO_KNOB_DISTANCE/2.0;
+          knobCenter[1] = p[0][1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
+          knobCenter[2] = p[0][2] + LEGO_KNOB_DISTANCE/2.0;
+
+          Vector3 o[2] = {
+              // back/down/left corner gets offset front/up/right
+              Vector3(LEGO_HORIZONTAL_TOLERANCE, LEGO_VERTICAL_TOLERANCE, LEGO_HORIZONTAL_TOLERANCE),
+              // front/up/right corner gets offset back/down/left
+              Vector3(-LEGO_HORIZONTAL_TOLERANCE, -LEGO_VERTICAL_TOLERANCE, -LEGO_HORIZONTAL_TOLERANCE)
+          };
 
 
           //objFile << "g default" << std::endl;
-          //Write 8 vertices of box
-          LazyVertex boxVerts[8] = {
-              {Vector3(p1[0], p1[1], p1[2]), &xyzCache},
-              {Vector3(p1[0], p1[1], p2[2]), &xyzCache},
-              {Vector3(p1[0], p2[1], p1[2]), &xyzCache},
-              {Vector3(p1[0], p2[1], p2[2]), &xyzCache},
-              {Vector3(p2[0], p1[1], p1[2]), &xyzCache},
-              {Vector3(p2[0], p1[1], p2[2]), &xyzCache},
-              {Vector3(p2[0], p2[1], p1[2]), &xyzCache},
-              {Vector3(p2[0], p2[1], p2[2]), &xyzCache}
+          //Write 8 vertices of box * 3 way split for bevel (x/y off, y/z off, z/x off)
+
+          auto lazyBoxVerts = [&xyzCache,&p, &o](size_t corner, size_t offDir) -> LazyVertex {
+              bool pM[3] = {(bool)(corner & 4), (bool)(corner & 2), (bool)(corner & 1)};
+
+              bool oM[3];
+              oM[(offDir + 0) % 3] = true;
+              oM[(offDir + 1) % 3] = true;
+              oM[(offDir + 2) % 3] = false;
+
+              Vector3 retVec;
+              for(int i = 0; i < 3; ++i) {
+                  retVec.data()[i] = p[pM[i]][i] + oM[i]*o[pM[i]][i];
+              }
+
+              return {retVec, &xyzCache};
           };
+
+          std::array<std::array<LazyVertex, 3>, 8> boxVerts = unrollLoop2D(lazyBoxVerts, index_sequence<8>(), index_sequence<3>());
+
 
           QVector<QVector<bool>> visibleStud(brick->getSizeX());
           QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
@@ -775,13 +831,23 @@ void LegoCloudNode::exportToObj(QString filename)
           //objFile << "s off" << std::endl;
           //Write box faces
           int brickColor = 1 + brick->getColorId();
+          using LazyQuadIdx = std::array<LazyVertex,4>;
           using QuadIdx = std::array<int,4>;
           QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
+
+          using TriIdx = std::array<int, 3>;
+          TriIdx triColors = {brickColor, brickColor, brickColor};
+          using LazyTriIdx = std::array<LazyVertex, 3>;
+          /*
+          std::array<LazyFace,8> = {
+
+          }
+          */
           if(legoCloud_->visible(brick, outside, {-1, 0, 0})) {
               //left
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 2;
               writeFace(objFile,
-                        QuadIdx{boxVerts[0], boxVerts[1], boxVerts[3], boxVerts[2]},
+                        LazyQuadIdx{boxVerts[0][1], boxVerts[1][1], boxVerts[3][1], boxVerts[2][1]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -789,7 +855,7 @@ void LegoCloudNode::exportToObj(QString filename)
               //right
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT;
               writeFace(objFile,
-                        QuadIdx{boxVerts[4], boxVerts[6], boxVerts[7], boxVerts[5]},
+                        LazyQuadIdx{boxVerts[4][1], boxVerts[6][1], boxVerts[7][1], boxVerts[5][1]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -797,7 +863,7 @@ void LegoCloudNode::exportToObj(QString filename)
               //bottom
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
               writeFace(objFile,
-                        QuadIdx{boxVerts[0], boxVerts[4], boxVerts[5], boxVerts[1]},
+                        LazyQuadIdx{boxVerts[0][2], boxVerts[4][2], boxVerts[5][2], boxVerts[1][2]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -805,7 +871,7 @@ void LegoCloudNode::exportToObj(QString filename)
               //top
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
               writeFace(objFile,
-                        QuadIdx{boxVerts[2], boxVerts[3], boxVerts[7], boxVerts[6]},
+                        LazyQuadIdx{boxVerts[2][2], boxVerts[3][2], boxVerts[7][2], boxVerts[6][2]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -813,7 +879,7 @@ void LegoCloudNode::exportToObj(QString filename)
               //back
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 4;
               writeFace(objFile,
-                        QuadIdx{boxVerts[0], boxVerts[2], boxVerts[6], boxVerts[4]},
+                        LazyQuadIdx{boxVerts[0][0], boxVerts[2][0], boxVerts[6][0], boxVerts[4][0]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -821,7 +887,7 @@ void LegoCloudNode::exportToObj(QString filename)
               //front
               int normIdx = 3 * (KNOB_RESOLUTION_OBJ_EXPORT / 4);
               writeFace(objFile,
-                        QuadIdx{boxVerts[1], boxVerts[5], boxVerts[7], boxVerts[3]},
+                        LazyQuadIdx{boxVerts[1][0], boxVerts[5][0], boxVerts[7][0], boxVerts[3][0]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -861,7 +927,7 @@ void LegoCloudNode::exportToObj(QString filename)
                         int iNorm = i ? i : KNOB_RESOLUTION_OBJ_EXPORT; // un-mod
                         int jNorm = j ? j : KNOB_RESOLUTION_OBJ_EXPORT; // un-mod
                         writeFace(objFile,
-                                  QuadIdx{knobIndex[i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + j], knobIndex[j]},
+                                  LazyQuadIdx{knobIndex[i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + j], knobIndex[j]},
                                   quadColors,
                                   QuadIdx{iNorm, iNorm, jNorm, jNorm});
 
