@@ -104,10 +104,9 @@ void writeFace(std::ostream& out, Vp vp, Vt vt = Vt(), Vn vn = Vn()) {
             out << "/";
             if(vtIndices.size()) {
                 out << vtIndices[i];
-            } else {
-                out << "/";
             }
             if(vnIndices.size()){
+                out << "/";
                 out << vnIndices[i];
             }
         }
@@ -683,6 +682,8 @@ void LegoCloudNode::exportToObj(QString filename)
       {
         std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
       }
+      objFile << "mtllib ldraw_palette.mtl" << std::endl;
+      objFile << "usemtl ldraw_palette" << std::endl;
 
       for(int i = 1; i <= KNOB_RESOLUTION_OBJ_EXPORT; ++i){
           // must be multiple of 4 to get cardinal directions encoded as well!
@@ -692,6 +693,12 @@ void LegoCloudNode::exportToObj(QString filename)
       }
       objFile << "vn " << Vector3(0, 1, 0) << std::endl; // up
       objFile << "vn " << Vector3(0, -1, 0) << std::endl; // down
+
+      for(int i = 0; i < legoCloud_->getLegalColor().size(); ++i) {
+          float u = (0.5 + (i % 16)) / 16.0;
+          float v = (0.5 + (i / 16)) / 16.0;
+          objFile << "vt " << u << " " << v << std::endl;
+      }
 
       VertexCache<OBJVertStream> xyzCache({objFile, "", 3});
       for(int level = 0; level < legoCloud_->getLevelNumber(); level++)
@@ -767,59 +774,63 @@ void LegoCloudNode::exportToObj(QString filename)
           }
           //objFile << "s off" << std::endl;
           //Write box faces
+          int brickColor = 1 + brick->getColorId();
           using QuadIdx = std::array<int,4>;
+          QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
           if(legoCloud_->visible(brick, outside, {-1, 0, 0})) {
               //left
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 2;
               writeFace(objFile,
                         QuadIdx{boxVerts[0], boxVerts[1], boxVerts[3], boxVerts[2]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
           if(legoCloud_->visible(brick, outside, {brick->getSizeX(), 0, 0})) {
               //right
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT;
               writeFace(objFile,
                         QuadIdx{boxVerts[4], boxVerts[6], boxVerts[7], boxVerts[5]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
           if(legoCloud_->visible(brick, outside, {0, 0, -1})) {
               //bottom
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
               writeFace(objFile,
                         QuadIdx{boxVerts[0], boxVerts[4], boxVerts[5], boxVerts[1]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
           if(legoCloud_->visible(brick, outside, {0, 0, 1})) {
               //top
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
               writeFace(objFile,
                         QuadIdx{boxVerts[2], boxVerts[3], boxVerts[7], boxVerts[6]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
           if(legoCloud_->visible(brick, outside, {0, -1, 0})) {
               //back
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 4;
               writeFace(objFile,
                         QuadIdx{boxVerts[0], boxVerts[2], boxVerts[6], boxVerts[4]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
           if(legoCloud_->visible(brick, outside, {0, brick->getSizeY(), 0})) {
               //front
               int normIdx = 3 * (KNOB_RESOLUTION_OBJ_EXPORT / 4);
               writeFace(objFile,
                         QuadIdx{boxVerts[1], boxVerts[5], boxVerts[7], boxVerts[3]},
-                        boost::none,
-                        QuadIdx{normIdx, normIdx, normIdx});
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
 
           using CapIdx = std::array<int, KNOB_RESOLUTION_OBJ_EXPORT>;
           CapIdx capNorm;
           capNorm.fill(KNOB_RESOLUTION_OBJ_EXPORT + 1);
+          CapIdx capColor;
+          capColor.fill(brickColor);
           //Write top caps face
           for(int x = 0; x < brick->getSizeX(); ++x)
           {
@@ -829,7 +840,7 @@ void LegoCloudNode::exportToObj(QString filename)
                     auto& knobIndex = studIndices[x][y];
                     writeFace(objFile,
                               qMakePair(knobIndex, index_sequence<KNOB_RESOLUTION_OBJ_EXPORT>()),
-                              boost::none,
+                              capColor,
                               capNorm);
                 }
             }
@@ -851,7 +862,7 @@ void LegoCloudNode::exportToObj(QString filename)
                         int jNorm = j ? j : KNOB_RESOLUTION_OBJ_EXPORT; // un-mod
                         writeFace(objFile,
                                   QuadIdx{knobIndex[i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + i], knobIndex[KNOB_RESOLUTION_OBJ_EXPORT + j], knobIndex[j]},
-                                  boost::none,
+                                  quadColors,
                                   QuadIdx{iNorm, iNorm, jNorm, jNorm});
 
                     }
