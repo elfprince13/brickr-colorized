@@ -96,16 +96,18 @@ QVector<int> intCollection(const QVector<int>& v) { return v; }
 
 QVector<int> intCollection(boost::none_t) { return QVector<int>(); }
 
+template<typename F, size_t ... I>
+auto unrollLoop1D(F f, integer_sequence<I...>) -> std::array<decltype(f((size_t)0)), sizeof...(I)> {
+    return { f(I) ... };
+}
+
 template<typename F, size_t ...I, size_t ...J>
-auto unrollLoop2D(F f, integer_sequence<I...>, integer_sequence<J...>) -> std::array<std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)>, sizeof...(I)> {
-    auto curryF = [&f](size_t i) -> std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)> {
+auto unrollLoop2D(F f, integer_sequence<I...> iS, integer_sequence<J...>) -> std::array<std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)>, sizeof...(I)> {
+    return unrollLoop1D([&f](size_t i) -> std::array<decltype(f((size_t)0, (size_t)0)), sizeof...(J)> {
         return {
           f(i, J) ...
         };
-    };
-    return {
-      curryF(I) ...
-    };
+    }, iS);
 }
 
 
@@ -143,14 +145,14 @@ public:
     LazyFace(Vp vpI, Vt vtI = Vt(), Vn vnI = Vn())
     : vp(vpI), vt(vtI), vn(vnI), converted(false) {}
     template<typename Vp_, typename Vt_, typename Vn_>
-    friend std::ostream& operator<<(std::ostream& os, const LazyFace<Vp_, Vt_, Vn_>& lf);
+    friend std::ostream& operator<<(std::ostream& os, LazyFace<Vp_, Vt_, Vn_>& lf);
 };
 
 template<typename Vp, typename Vt, typename Vn>
-std::ostream& operator<<(std::ostream& os, const LazyFace<Vp, Vt, Vn>& lf) {
+std::ostream& operator<<(std::ostream& os, LazyFace<Vp, Vt, Vn>& lf) {
     return (lf.converted
             ? os
-            : ((lf.converted = true), writeFace(lf.vp, lf.vt, lf.vn)));
+            : ((lf.converted = true), writeFace(os, lf.vp, lf.vt, lf.vn)));
 }
 
 LegoCloudNode::LegoCloudNode()
@@ -838,11 +840,107 @@ void LegoCloudNode::exportToObj(QString filename)
           using TriIdx = std::array<int, 3>;
           TriIdx triColors = {brickColor, brickColor, brickColor};
           using LazyTriIdx = std::array<LazyVertex, 3>;
-          /*
-          std::array<LazyFace,8> = {
 
+          // left/right, back/front, bottom/top
+          auto faceIdxToNormIdx = [](size_t i){
+              static constexpr size_t QUARTER_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 4;
+              static constexpr size_t HALF_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 2;
+              static constexpr size_t FULL_TURN = KNOB_RESOLUTION_OBJ_EXPORT;
+              static constexpr size_t BASES[3] = {HALF_TURN, QUARTER_TURN, FULL_TURN + 1};
+              static constexpr size_t OFFSETS[3] = {HALF_TURN, HALF_TURN, 1};
+              size_t axis = i / 2;
+              bool offset = i % 2;
+              return BASES[axis] + offset*OFFSETS[axis];
+          };
+
+          using BrickSizeF = int(LegoBrick::*)() const;
+          auto faceIdxToNeighbor = [&brick](size_t i ) -> VoxelCoord {
+              static constexpr BrickSizeF axisSizeFs[3] = {&LegoBrick::getSizeX, &LegoBrick::getSizeY, &LegoBrick::getSizeLevels};
+              VoxelCoord vc{0, 0, 0};
+              size_t axis = i / 2;
+              bool offset = i % 2;
+              vc[axis] = 1;
+              return vc * (offset ? (brick->*axisSizeFs[axis])() : -1);
+          };
+
+          auto faceIdxToFirstVertexIdxs = [](size_t i) {
+              size_t axis = i / 2;
+              bool offset = (i % 2);
+              size_t fixedBit = offset << ((axis + 2) % 3);
+              size_t firstBit = 1 << ((axis + offset) % 3);
+              size_t secondBit = 1 << ((axis + !offset) % 3);
+              return std::array<size_t, 4>{fixedBit, fixedBit | firstBit, fixedBit | firstBit | secondBit, fixedBit | secondBit};
+          };
+
+          auto faceIdxToSecondVertexIdx = [](size_t i) -> size_t {
+              static constexpr size_t idxMap[3] = {1, 0, 2}; // execute y<->z swap going from voxels to obj
+              return idxMap[i / 2];
+          };
+
+
+          std::array<LazyFace<LazyTriIdx,TriIdx,TriIdx>,8> bevelCorners = unrollLoop1D([&boxVerts, &triColors, &faceIdxToSecondVertexIdx, &faceIdxToNormIdx](size_t i) -> LazyFace<LazyTriIdx,TriIdx,TriIdx> {
+              std::array<size_t, 3> faceJs = {0, 1, 2};
+              for(size_t j = 0; j < 3; ++j){
+                  //*
+                  if((bool)(i & 1) ^ (bool)(i & 2) ^ (bool)(i & 4)){
+                      faceJs[j] = 2 - faceJs[j];
+                  }
+                  //*/
+
+                  faceJs[j] = 2*faceJs[j] + (bool)(i & (1 << ((faceJs[j] + 2) % 3)));
+              }
+              return LazyFace<LazyTriIdx,TriIdx,TriIdx>(
+                          unrollLoop1D([&i,&boxVerts,&faceIdxToSecondVertexIdx,&faceJs](size_t j) -> LazyVertex {
+                            return boxVerts[i][faceIdxToSecondVertexIdx(faceJs[j])];
+                          }, index_sequence<3>()),
+                          triColors,
+                          unrollLoop1D([&faceIdxToNormIdx,&faceJs](size_t i) -> int{
+                            return faceIdxToNormIdx(faceJs[i]);
+                          }, index_sequence<3>()));
+          }, index_sequence<8>());
+
+          std::array<std::array<LazyFace<LazyQuadIdx,QuadIdx,QuadIdx>, 4>, 3> bevelEdges = unrollLoop2D([&](size_t axis, size_t corner) -> LazyFace<LazyQuadIdx,QuadIdx,QuadIdx>{
+              size_t faceIs[2] = {2*axis,2*axis+1};
+              std::array<std::array<size_t, 4>,2> vertexIs{
+                  faceIdxToFirstVertexIdxs(faceIs[0]),
+                  faceIdxToFirstVertexIdxs(faceIs[1])
+              };
+              std::swap(vertexIs[1][1],vertexIs[1][2]);
+              size_t faceJs[4] = {2*((axis+1)%3),2*((axis+2)%3),2*((axis+1)%3)+1,2*((axis+2)%3)+1};
+              return LazyFace<LazyQuadIdx,QuadIdx,QuadIdx>(
+                          unrollLoop1D([&](size_t i) -> LazyVertex {
+                              bool offset = ((i+1) % 4)/2;
+                              return boxVerts[vertexIs[offset][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+offset)%4])];
+                          }, index_sequence<4>())
+                          /*LazyQuadIdx{
+                              boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])],
+                              boxVerts[vertexIs[1][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+1)%4])],
+                              boxVerts[vertexIs[1][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+1)%4])],
+                              boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])]
+                          }*/,
+                          quadColors,
+                          unrollLoop1D([&faceIdxToNormIdx,&faceJs](size_t i) -> int{
+                            return faceIdxToNormIdx(faceJs[i]);
+                          }, index_sequence<4>()));
+           }, index_sequence<3>(), index_sequence<4>());
+
+
+          for(size_t face = 0; face < 6; ++face) {
+              VoxelCoord neighbor = faceIdxToNeighbor(face);
+              int normIdx = faceIdxToNormIdx(face);
+              if(legoCloud_->visible(brick, outside, neighbor)) {
+                  std::array<size_t, 4> is = faceIdxToFirstVertexIdxs(face);
+                  size_t j = faceIdxToSecondVertexIdx(face);
+                  writeFace(objFile,
+                            LazyQuadIdx{boxVerts[is[0]][j],boxVerts[is[1]][j],boxVerts[is[2]][j],boxVerts[is[3]][j]},
+                            quadColors,
+                            QuadIdx{normIdx, normIdx, normIdx, normIdx});
+                  for(size_t i = 0; i < 4; ++i){
+                      objFile << bevelCorners[is[i]];
+                  }
+              }
           }
-          */
+          /*
           if(legoCloud_->visible(brick, outside, {-1, 0, 0})) {
               //left
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 2;
@@ -856,22 +954,6 @@ void LegoCloudNode::exportToObj(QString filename)
               int normIdx = KNOB_RESOLUTION_OBJ_EXPORT;
               writeFace(objFile,
                         LazyQuadIdx{boxVerts[4][1], boxVerts[6][1], boxVerts[7][1], boxVerts[5][1]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, 0, -1})) {
-              //bottom
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[0][2], boxVerts[4][2], boxVerts[5][2], boxVerts[1][2]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, 0, 1})) {
-              //top
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[2][2], boxVerts[3][2], boxVerts[7][2], boxVerts[6][2]},
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
@@ -891,6 +973,23 @@ void LegoCloudNode::exportToObj(QString filename)
                         quadColors,
                         QuadIdx{normIdx, normIdx, normIdx, normIdx});
           }
+          if(legoCloud_->visible(brick, outside, {0, 0, -1})) {
+              //bottom
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
+              writeFace(objFile,
+                        LazyQuadIdx{boxVerts[0][2], boxVerts[4][2], boxVerts[5][2], boxVerts[1][2]},
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
+          }
+          if(legoCloud_->visible(brick, outside, {0, 0, 1})) {
+              //top
+              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
+              writeFace(objFile,
+                        LazyQuadIdx{boxVerts[2][2], boxVerts[3][2], boxVerts[7][2], boxVerts[6][2]},
+                        quadColors,
+                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
+          }
+          */
 
           using CapIdx = std::array<int, KNOB_RESOLUTION_OBJ_EXPORT>;
           CapIdx capNorm;

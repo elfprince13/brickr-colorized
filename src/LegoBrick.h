@@ -37,6 +37,7 @@ public:
 
   inline int getSizeX() const {return sizeX_;}
   inline int getSizeY() const {return sizeY_;}
+  inline int getSizeLevels() const { return 1; }
   inline BrickSize getSize() const {return (sizeX_ <= sizeY_ ? BrickSize(sizeX_, sizeY_) : BrickSize(sizeY_, sizeX_));}
   inline int getKnobNumber() const {return sizeX_*sizeY_;}
 

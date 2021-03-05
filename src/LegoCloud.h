@@ -34,6 +34,19 @@ struct VoxelCoord {
    inline VoxelCoord operator+(const VoxelCoord& o) const {
        return { x + o.x, y + o.y, z + o.z};
    }
+
+   inline VoxelCoord operator*(const int scalar) const {
+       return { x * scalar, y * scalar, z * scalar};
+   }
+
+   int& operator[](size_t off) {
+       switch(off) {
+       case 0: return x;
+       case 1: return y;
+       case 2: return z;
+       default: throw std::out_of_range("only 3 axes in a VoxelCoord");
+       }
+   }
 };
 
 namespace brickr{
