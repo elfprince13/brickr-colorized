@@ -905,12 +905,12 @@ void LegoCloudNode::exportToObj(QString filename)
                   faceIdxToFirstVertexIdxs(faceIs[0]),
                   faceIdxToFirstVertexIdxs(faceIs[1])
               };
-              std::swap(vertexIs[1][1],vertexIs[1][2]);
+              std::swap(vertexIs[1][1],vertexIs[1][3]);
               size_t faceJs[4] = {2*((axis+1)%3),2*((axis+2)%3),2*((axis+1)%3)+1,2*((axis+2)%3)+1};
               return LazyFace<LazyQuadIdx,QuadIdx,QuadIdx>(
                           unrollLoop1D([&](size_t i) -> LazyVertex {
                               bool offset = ((i+1) % 4)/2;
-                              return boxVerts[vertexIs[offset][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+offset)%4])];
+                              return boxVerts[vertexIs[offset][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+i/2)%4])];
                           }, index_sequence<4>())
                           /*LazyQuadIdx{
                               boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])],
@@ -919,10 +919,25 @@ void LegoCloudNode::exportToObj(QString filename)
                               boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])]
                           }*/,
                           quadColors,
-                          unrollLoop1D([&faceIdxToNormIdx,&faceJs](size_t i) -> int{
-                            return faceIdxToNormIdx(faceJs[i]);
+                          unrollLoop1D([&](size_t i) -> int{
+                            return faceIdxToNormIdx(faceJs[(corner + i / 2) % 4]);
                           }, index_sequence<4>()));
            }, index_sequence<3>(), index_sequence<4>());
+
+          auto faceIdxToFirstEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
+              size_t axis = face / 2;
+              bool offset = face % 2;
+              size_t r0 = 2 - offset;
+              size_t r1 = 1 + offset;
+
+              return {(axis+r0)%3,(axis+r1)%3,(axis+r0)%3,(axis+r1)%3};
+          };
+
+          auto faceIdxToSecondEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
+              size_t offset = face % 2;
+
+              return {2 * offset, 2 * offset, 3, 1};
+          };
 
 
           for(size_t face = 0; face < 6; ++face) {
@@ -935,8 +950,11 @@ void LegoCloudNode::exportToObj(QString filename)
                             LazyQuadIdx{boxVerts[is[0]][j],boxVerts[is[1]][j],boxVerts[is[2]][j],boxVerts[is[3]][j]},
                             quadColors,
                             QuadIdx{normIdx, normIdx, normIdx, normIdx});
+                  std::array<size_t, 4> ks = faceIdxToFirstEdgeIdxs(face);
+                  std::array<size_t, 4> ls = faceIdxToSecondEdgeIdxs(face);
                   for(size_t i = 0; i < 4; ++i){
                       objFile << bevelCorners[is[i]];
+                      objFile << bevelEdges[ks[i]][ls[i]];
                   }
               }
           }
