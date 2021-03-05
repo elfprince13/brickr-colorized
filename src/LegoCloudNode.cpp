@@ -724,7 +724,6 @@ void LegoCloudNode::exportToObj(QString filename)
         std::cerr << "LegoCloudNode: unable to create or open the file: " << filename.toStdString().c_str() << std::endl;
       }
       objFile << "mtllib ldraw_palette.mtl" << std::endl;
-      objFile << "usemtl ldraw_palette" << std::endl;
 
       for(int i = 1; i <= KNOB_RESOLUTION_OBJ_EXPORT; ++i){
           // must be multiple of 4 to get cardinal directions encoded as well!
@@ -742,30 +741,55 @@ void LegoCloudNode::exportToObj(QString filename)
       }
 
       VertexCache<OBJVertStream> xyzCache({objFile, "", 3});
-      for(int level = 0; level < legoCloud_->getLevelNumber(); level++)
-      {
-        for(QList<LegoBrick>::const_iterator brickIt = legoCloud_->getBricks(level).begin(); brickIt != legoCloud_->getBricks(level).constEnd(); brickIt++)
-        {
-          const LegoBrick* brick = &(*brickIt);
+      using LazyQuadIdx = std::array<LazyVertex,4>;
+      using QuadIdx = std::array<int,4>;
+      using TriIdx = std::array<int, 3>;
+      using LazyTriIdx = std::array<LazyVertex, 3>;
 
-          Vector3 p[2];
-          //Back corner down left
-          p[0][0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-          p[0][1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
-          p[0][2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
-          //p[0] *= 10.0;
+      // left/right, back/front, bottom/top
+      auto faceIdxToNormIdx = [](size_t i){
+          static constexpr size_t QUARTER_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 4;
+          static constexpr size_t HALF_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 2;
+          static constexpr size_t FULL_TURN = KNOB_RESOLUTION_OBJ_EXPORT;
+          static constexpr size_t BASES[3] = {HALF_TURN, QUARTER_TURN, FULL_TURN + 1};
+          static constexpr size_t OFFSETS[3] = {HALF_TURN, HALF_TURN, 1};
+          size_t axis = i / 2;
+          bool offset = i % 2;
+          return BASES[axis] + offset*OFFSETS[axis];
+      };
 
-          //Front corner up right
-          p[1][0] = p[0][0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-          p[1][1] = p[0][1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
-          p[1][2] = p[0][2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
-          //p[1] *= 10.0;
+      auto faceIdxToFirstVertexIdxs = [](size_t i) {
+          size_t axis = i / 2;
+          bool offset = (i % 2);
+          size_t fixedBit = offset << ((axis + 2) % 3);
+          size_t firstBit = 1 << ((axis + offset) % 3);
+          size_t secondBit = 1 << ((axis + !offset) % 3);
+          return std::array<size_t, 4>{fixedBit, fixedBit | firstBit, fixedBit | firstBit | secondBit, fixedBit | secondBit};
+      };
 
-          Vector3 knobCenter;//Center of back left knob (top)
-          knobCenter[0] = p[0][0] + LEGO_KNOB_DISTANCE/2.0;
-          knobCenter[1] = p[0][1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
-          knobCenter[2] = p[0][2] + LEGO_KNOB_DISTANCE/2.0;
+      auto faceIdxToSecondVertexIdx = [](size_t i) -> size_t {
+          static constexpr size_t idxMap[3] = {1, 0, 2}; // execute y<->z swap going from voxels to obj
+          return idxMap[i / 2];
+      };
 
+      auto faceIdxToFirstEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
+          size_t axis = face / 2;
+          bool offset = face % 2;
+          size_t r0 = 2 - offset;
+          size_t r1 = 1 + offset;
+
+          return {(axis+r0)%3,(axis+r1)%3,(axis+r0)%3,(axis+r1)%3};
+      };
+
+      auto faceIdxToSecondEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
+          size_t offset = face % 2;
+
+          return {2 * offset, 2 * offset, 3, 1};
+      };
+
+      objFile << "g bricks" << std::endl;
+      objFile << "usemtl ldraw_palette" << std::endl;
+      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&p)[2], int brickColor){
           Vector3 o[2] = {
               // back/down/left corner gets offset front/up/right
               Vector3(LEGO_HORIZONTAL_TOLERANCE, LEGO_VERTICAL_TOLERANCE, LEGO_HORIZONTAL_TOLERANCE),
@@ -773,10 +797,11 @@ void LegoCloudNode::exportToObj(QString filename)
               Vector3(-LEGO_HORIZONTAL_TOLERANCE, -LEGO_VERTICAL_TOLERANCE, -LEGO_HORIZONTAL_TOLERANCE)
           };
 
+          TriIdx triColors = {brickColor, brickColor, brickColor};
+          QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
 
-          //objFile << "g default" << std::endl;
+
           //Write 8 vertices of box * 3 way split for bevel (x/y off, y/z off, z/x off)
-
           auto lazyBoxVerts = [&xyzCache,&p, &o](size_t corner, size_t offDir) -> LazyVertex {
               bool pM[3] = {(bool)(corner & 4), (bool)(corner & 2), (bool)(corner & 1)};
 
@@ -795,64 +820,6 @@ void LegoCloudNode::exportToObj(QString filename)
 
           std::array<std::array<LazyVertex, 3>, 8> boxVerts = unrollLoop2D(lazyBoxVerts, index_sequence<8>(), index_sequence<3>());
 
-
-          QVector<QVector<bool>> visibleStud(brick->getSizeX());
-          QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
-          int studCount = 0;
-
-          //Write knobs vertices
-          for(int x = 0; x < brick->getSizeX(); ++x)
-          {
-              visibleStud[x] = QVector<bool>(brick->getSizeY());
-              studIndices[x] = QVector<QVector<LazyVertex>>(brick->getSizeY());
-            for(int y = 0; y < brick->getSizeY(); ++y)
-            {
-                visibleStud[x][y] = ((1 + level) == legoCloud_->getLevelNumber()) || (outside == legoCloud_->getVoxelGrid()[level+1][x+brickIt->getPosX()][y+brickIt->getPosY()]);
-                if(visibleStud[x][y])
-                {
-                    studIndices[x][y] = QVector<LazyVertex>(2 * KNOB_RESOLUTION_OBJ_EXPORT);
-
-                    for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
-                    {
-                      double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
-                      studIndices[x][y][i] = LazyVertex{
-                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
-                                  knobCenter[1],
-                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
-                      studIndices[x][y][KNOB_RESOLUTION_OBJ_EXPORT+i] = LazyVertex{
-                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
-                                  knobCenter[1] - LEGO_KNOB_HEIGHT,
-                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
-                    }
-
-                } else {
-                    studIndices[x][y] = QVector<LazyVertex>(0);
-                }
-            }
-          }
-          //objFile << "s off" << std::endl;
-          //Write box faces
-          int brickColor = 1 + brick->getColorId();
-          using LazyQuadIdx = std::array<LazyVertex,4>;
-          using QuadIdx = std::array<int,4>;
-          QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
-
-          using TriIdx = std::array<int, 3>;
-          TriIdx triColors = {brickColor, brickColor, brickColor};
-          using LazyTriIdx = std::array<LazyVertex, 3>;
-
-          // left/right, back/front, bottom/top
-          auto faceIdxToNormIdx = [](size_t i){
-              static constexpr size_t QUARTER_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 4;
-              static constexpr size_t HALF_TURN = KNOB_RESOLUTION_OBJ_EXPORT / 2;
-              static constexpr size_t FULL_TURN = KNOB_RESOLUTION_OBJ_EXPORT;
-              static constexpr size_t BASES[3] = {HALF_TURN, QUARTER_TURN, FULL_TURN + 1};
-              static constexpr size_t OFFSETS[3] = {HALF_TURN, HALF_TURN, 1};
-              size_t axis = i / 2;
-              bool offset = i % 2;
-              return BASES[axis] + offset*OFFSETS[axis];
-          };
-
           using BrickSizeF = int(LegoBrick::*)() const;
           auto faceIdxToNeighbor = [&brick](size_t i ) -> VoxelCoord {
               static constexpr BrickSizeF axisSizeFs[3] = {&LegoBrick::getSizeX, &LegoBrick::getSizeY, &LegoBrick::getSizeLevels};
@@ -861,20 +828,6 @@ void LegoCloudNode::exportToObj(QString filename)
               bool offset = i % 2;
               vc[axis] = 1;
               return vc * (offset ? (brick->*axisSizeFs[axis])() : -1);
-          };
-
-          auto faceIdxToFirstVertexIdxs = [](size_t i) {
-              size_t axis = i / 2;
-              bool offset = (i % 2);
-              size_t fixedBit = offset << ((axis + 2) % 3);
-              size_t firstBit = 1 << ((axis + offset) % 3);
-              size_t secondBit = 1 << ((axis + !offset) % 3);
-              return std::array<size_t, 4>{fixedBit, fixedBit | firstBit, fixedBit | firstBit | secondBit, fixedBit | secondBit};
-          };
-
-          auto faceIdxToSecondVertexIdx = [](size_t i) -> size_t {
-              static constexpr size_t idxMap[3] = {1, 0, 2}; // execute y<->z swap going from voxels to obj
-              return idxMap[i / 2];
           };
 
 
@@ -911,34 +864,12 @@ void LegoCloudNode::exportToObj(QString filename)
                           unrollLoop1D([&](size_t i) -> LazyVertex {
                               bool offset = ((i+1) % 4)/2;
                               return boxVerts[vertexIs[offset][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+i/2)%4])];
-                          }, index_sequence<4>())
-                          /*LazyQuadIdx{
-                              boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])],
-                              boxVerts[vertexIs[1][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+1)%4])],
-                              boxVerts[vertexIs[1][corner]][faceIdxToSecondVertexIdx(faceJs[(corner+1)%4])],
-                              boxVerts[vertexIs[0][corner]][faceIdxToSecondVertexIdx(faceJs[corner])]
-                          }*/,
+                          }, index_sequence<4>()),
                           quadColors,
                           unrollLoop1D([&](size_t i) -> int{
                             return faceIdxToNormIdx(faceJs[(corner + i / 2) % 4]);
                           }, index_sequence<4>()));
            }, index_sequence<3>(), index_sequence<4>());
-
-          auto faceIdxToFirstEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
-              size_t axis = face / 2;
-              bool offset = face % 2;
-              size_t r0 = 2 - offset;
-              size_t r1 = 1 + offset;
-
-              return {(axis+r0)%3,(axis+r1)%3,(axis+r0)%3,(axis+r1)%3};
-          };
-
-          auto faceIdxToSecondEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
-              size_t offset = face % 2;
-
-              return {2 * offset, 2 * offset, 3, 1};
-          };
-
 
           for(size_t face = 0; face < 6; ++face) {
               VoxelCoord neighbor = faceIdxToNeighbor(face);
@@ -958,56 +889,52 @@ void LegoCloudNode::exportToObj(QString filename)
                   }
               }
           }
-          /*
-          if(legoCloud_->visible(brick, outside, {-1, 0, 0})) {
-              //left
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 2;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[0][1], boxVerts[1][1], boxVerts[3][1], boxVerts[2][1]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
+      });
+
+      objFile << "g studs" << std::endl;
+      objFile << "usemtl ldraw_palette" << std::endl;
+      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&p)[2], int brickColor){
+          Vector3 knobCenter;//Center of back left knob (top)
+          knobCenter[0] = p[0][0] + LEGO_KNOB_DISTANCE/2.0;
+          knobCenter[1] = p[0][1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
+          knobCenter[2] = p[0][2] + LEGO_KNOB_DISTANCE/2.0;
+
+          QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
+
+          QVector<QVector<bool>> visibleStud(brick->getSizeX());
+          QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
+
+          int nextLevel = 1 + brick->getLevel();
+          //Write knobs vertices
+          for(int x = 0; x < brick->getSizeX(); ++x)
+          {
+              visibleStud[x] = QVector<bool>(brick->getSizeY());
+              studIndices[x] = QVector<QVector<LazyVertex>>(brick->getSizeY());
+            for(int y = 0; y < brick->getSizeY(); ++y)
+            {
+                visibleStud[x][y] = (nextLevel == legoCloud_->getLevelNumber()) || (outside == legoCloud_->getVoxelGrid()[nextLevel][x+brick->getPosX()][y+brick->getPosY()]);
+                if(visibleStud[x][y])
+                {
+                    studIndices[x][y] = QVector<LazyVertex>(2 * KNOB_RESOLUTION_OBJ_EXPORT);
+
+                    for(int i = 0; i < KNOB_RESOLUTION_OBJ_EXPORT; ++i)
+                    {
+                      double angle = -i*(2*M_PI/double(KNOB_RESOLUTION_OBJ_EXPORT));
+                      studIndices[x][y][i] = LazyVertex{
+                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
+                                  knobCenter[1],
+                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
+                      studIndices[x][y][KNOB_RESOLUTION_OBJ_EXPORT+i] = LazyVertex{
+                          Vector3(knobCenter[0] + x*LEGO_KNOB_DISTANCE + cos(angle)*LEGO_KNOB_RADIUS,
+                                  knobCenter[1] - LEGO_KNOB_HEIGHT,
+                                  knobCenter[2] + y*LEGO_KNOB_DISTANCE + sin(angle)*LEGO_KNOB_RADIUS), &xyzCache};
+                    }
+
+                } else {
+                    studIndices[x][y] = QVector<LazyVertex>(0);
+                }
+            }
           }
-          if(legoCloud_->visible(brick, outside, {brick->getSizeX(), 0, 0})) {
-              //right
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[4][1], boxVerts[6][1], boxVerts[7][1], boxVerts[5][1]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, -1, 0})) {
-              //back
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT / 4;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[0][0], boxVerts[2][0], boxVerts[6][0], boxVerts[4][0]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, brick->getSizeY(), 0})) {
-              //front
-              int normIdx = 3 * (KNOB_RESOLUTION_OBJ_EXPORT / 4);
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[1][0], boxVerts[5][0], boxVerts[7][0], boxVerts[3][0]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, 0, -1})) {
-              //bottom
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 2;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[0][2], boxVerts[4][2], boxVerts[5][2], boxVerts[1][2]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          if(legoCloud_->visible(brick, outside, {0, 0, 1})) {
-              //top
-              int normIdx = KNOB_RESOLUTION_OBJ_EXPORT + 1;
-              writeFace(objFile,
-                        LazyQuadIdx{boxVerts[2][2], boxVerts[3][2], boxVerts[7][2], boxVerts[6][2]},
-                        quadColors,
-                        QuadIdx{normIdx, normIdx, normIdx, normIdx});
-          }
-          */
 
           using CapIdx = std::array<int, KNOB_RESOLUTION_OBJ_EXPORT>;
           CapIdx capNorm;
@@ -1030,7 +957,6 @@ void LegoCloudNode::exportToObj(QString filename)
           }
 
           //Write cylinder faces
-          //objFile << "s 1" << std::endl;
           for(int x = 0; x < brick->getSizeX(); ++x)
           {
             for(int y = 0; y < brick->getSizeY(); ++y)
@@ -1052,12 +978,7 @@ void LegoCloudNode::exportToObj(QString filename)
                 }
             }
           }
-
-          brickIndex++;
-          vertexIndex += 8 + studCount*(2*KNOB_RESOLUTION_OBJ_EXPORT);
-        }
-      }
-
+      });
 
       objFile.close();
 

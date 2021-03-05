@@ -128,6 +128,33 @@ public:
   // but that's hard and will actually increase poly count!
   bool visible(const LegoBrick* brick, const LegoBrick* outside, const VoxelCoord& dir) const;
 
+  template<typename F>
+  void forEachBrick(F f) {
+      for(int level = 0; level < getLevelNumber(); level++)
+      {
+        for(QList<LegoBrick>::const_iterator brickIt = getBricks(level).begin(); brickIt != getBricks(level).constEnd(); brickIt++)
+        {
+          const LegoBrick* brick = &(*brickIt);
+
+          Vector3 p[2];
+          //Back corner down left
+          p[0][0] = brick->getPosX()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          p[0][1] = brick->getLevel()*LEGO_HEIGHT;// + LEGO_VERTICAL_TOLERANCE;
+          p[0][2] = brick->getPosY()*LEGO_KNOB_DISTANCE;// + LEGO_HORIZONTAL_TOLERANCE;
+          //p[0] *= 10.0;
+
+          //Front corner up right
+          p[1][0] = p[0][0] + brick->getSizeX()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+          p[1][1] = p[0][1] + LEGO_HEIGHT;// - LEGO_VERTICAL_TOLERANCE;
+          p[1][2] = p[0][2] + brick->getSizeY()*LEGO_KNOB_DISTANCE;// - LEGO_HORIZONTAL_TOLERANCE;
+
+          int brickColor = 1 + brick->getColorId();
+
+          f(brick, p, brickColor);
+        }
+      }
+  }
+
 private:
   LegoBrick *addBrick(int level, int posX, int posY, int sizeX, int sizeY);//Level must already exist
   bool removeBrick(LegoBrick* brick);
