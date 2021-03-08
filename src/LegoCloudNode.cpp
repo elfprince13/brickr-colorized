@@ -155,12 +155,84 @@ std::ostream& operator<<(std::ostream& os, LazyFace<Vp, Vt, Vn>& lf) {
             : ((lf.converted = true), writeFace(os, lf.vp, lf.vt, lf.vn)));
 }
 
+std::array<LazyVertex, 4> getUVs(int width, int heightN, int heightD, int colorId, bool rotate90, VertexCache<OBJVertStream>& uvCache) {
+    constexpr static const int UNIT = 100;
+    int colorU = colorId % 16;
+    int colorV = colorId / 16;
+
+    int baseU = 16;
+    int baseV = 16;
+
+    int brickU;
+    int brickV;
+    switch(width) {
+        case 1: {
+            brickU = 0;
+            brickV = (UNIT*heightN)/heightD;
+        } break;
+        case 2: {
+            brickU = 0;
+            brickV = (2*UNIT*heightN)/heightD;
+        } break;
+        case 3: {
+            brickU = 0;
+            brickV = (3*UNIT*heightN)/heightD;
+        } break;
+        case 4:{
+            brickU = (10-width)*UNIT;
+            brickV = (3*UNIT*heightN)/heightD;
+        } break;
+        case 6: {
+            brickU = (10-width)*UNIT;
+            brickV = (2*UNIT*heightN)/heightD;
+        } break;
+        case 8: {
+            brickU = (10-width)*UNIT;
+            brickV = (UNIT*heightN)/heightD;
+        } break;
+        case 10:{
+            brickU = (10-width)*UNIT;
+            brickV = 0;
+        } break;
+        default: throw std::out_of_range("Unknown width");
+    }
+    if(heightN == 1 && heightD == 1) {
+        ; // no-op
+    } else if(heightN == 2 && heightD == 1) {
+        baseU += 1024;
+    } else if(heightN == 6 && heightD == 5) {
+        baseV += 1024;
+    } else {
+        throw std::out_of_range("Unknown height");
+    }
+
+    Vector3 color(colorU, colorV, 0);
+    Vector3 base(baseU, baseV, 0);
+    // CCW around, starting from origin in +v
+    std::array<Vector3, 4> rawUVs{
+        Vector3(brickU, brickV, 0),
+        Vector3(brickU, brickV + (UNIT * heightN) / heightD, 0),
+        Vector3(brickU + (UNIT * width), brickV + (UNIT * heightN) / heightD, 0),
+        Vector3(brickU + (UNIT * width), brickV, 0)};
+    std::cout << width << "x" << (heightN/float(heightD)) << " face has CCW coordinates: {";
+    std::cout << "[" << (base+rawUVs[0]) << "], [" << (base+rawUVs[1]) << "], ["  << (base+rawUVs[2]) << "], ["  << (base+rawUVs[3]) << "]" ;
+    std::cout << std::endl;
+    if(rotate90) {
+        /* now start along a +u edge */
+        std::rotate(rawUVs.begin(), rawUVs.begin() + 1, rawUVs.end());
+        //std::swap(rawUVs[1], rawUVs[3]);
+    }
+    return unrollLoop1D([&](size_t i) -> LazyVertex {
+        return {color + (base + rawUVs[i]) / 2048, &uvCache};
+    }, index_sequence<4>());
+}
+
 LegoCloudNode::LegoCloudNode()
   : legoCloud_(new LegoCloud()), renderLayerByLayer_(false), renderLayer_(0), knobList_(glGenLists(1)),
     renderBricks_(true), renderGraph_(false), colorRendering_(RealColor), drawDirty_(true)
 {
     baseScale_ = 1.6;
-    basePoint_ = Vector3(2653477.260585, -3695084.806065, 0);
+    basePoint_ = Vector3(0,0,0);//(2653477.260585, -3695084.806065, 0);
 }
 
 LegoCloudNode::~LegoCloudNode()
@@ -739,14 +811,18 @@ void LegoCloudNode::exportToObj(QString filename)
           Vector3 normal(cos(angle),0,sin(angle)); // iterate clockwise: right, back, left, front
           objFile << "vn " << normal << std::endl;
       }
-      objFile << "vn " << Vector3(0, 1, 0) << std::endl; // up
       objFile << "vn " << Vector3(0, -1, 0) << std::endl; // down
+      objFile << "vn " << Vector3(0, 1, 0) << std::endl; // up
 
+      /*
       for(int i = 0; i < legoCloud_->getLegalColor().size(); ++i) {
           float u = (0.5 + (i % 16)) / 16.0;
           float v = (0.5 + (i / 16)) / 16.0;
           objFile << "vt " << u << " " << v << std::endl;
       }
+      */
+
+      VertexCache<OBJVertStream> uvCache({objFile, "t", 2});
 
       VertexCache<OBJVertStream> xyzCache({objFile, "", 3});
       using LazyQuadIdx = std::array<LazyVertex,4>;
@@ -777,7 +853,7 @@ void LegoCloudNode::exportToObj(QString filename)
 
       auto faceIdxToSecondVertexIdx = [](size_t i) -> size_t {
           static constexpr size_t idxMap[3] = {1, 0, 2}; // execute y<->z swap going from voxels to obj
-          return idxMap[i / 2];
+          return 0;//idxMap[i / 2];
       };
 
       auto faceIdxToFirstEdgeIdxs = [](size_t face) -> std::array<size_t, 4> {
@@ -809,6 +885,41 @@ void LegoCloudNode::exportToObj(QString filename)
           TriIdx triColors = {brickColor, brickColor, brickColor};
           QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
 
+          BrickSize size = brick->getSize();
+          int sizeX = brick->getSizeX();
+          int sizeY = brick->getSizeY();
+          auto faceIdxToUVs = [&](size_t face) -> LazyQuadIdx {
+              size_t axis = face / 2;
+              bool offset = face % 2;
+
+              /*
+              float transform[3][4] = {
+                  {1, 0, 0, 10.0f*size.second}, // All the basic LDraw bricks are longer in X than Z
+                  {0, 1, 0, -24.0f*brick.getLevel()}, // -Y up
+                  {0, 0, 1, 10.0f*size.first}, // +Z into screen
+              };
+              if(size.first == brick.getSizeX()) {
+                  std::swap(transform[0],transform[2]);
+              }
+              */
+              LazyQuadIdx uvQuad;
+              switch(axis) {
+              case 0: {
+                  uvQuad = getUVs(sizeY,6,5,brickColor,!offset,uvCache);
+              } break;
+              case 1: {
+                  uvQuad = getUVs(sizeX,6,5,brickColor,offset,uvCache);
+              } break;
+              case 2: {
+                  uvQuad = getUVs(size.second, size.first,1,brickColor,sizeX == size.first, uvCache);
+                  //std::swap(uvQuad[1],uvQuad[3]);
+              } break;
+              default: throw std::out_of_range("3d geometry has no axis greater than 2");
+              }
+              return uvQuad;
+          };
+          auto lazyBoxUVs = unrollLoop1D(faceIdxToUVs, index_sequence<6>());
+
 
           //Write 8 vertices of box * 3 way split for bevel (x/y off, y/z off, z/x off)
           auto lazyBoxVerts = [&xyzCache,&p, &o](size_t corner, size_t offDir) -> LazyVertex {
@@ -821,13 +932,13 @@ void LegoCloudNode::exportToObj(QString filename)
 
               Vector3 retVec;
               for(int i = 0; i < 3; ++i) {
-                  retVec.data()[i] = p[pM[i]][i] + oM[i]*o[pM[i]][i];
+                  retVec.data()[i] = p[pM[i]][i];// + oM[i]*o[pM[i]][i];
               }
 
               return {retVec, &xyzCache};
           };
 
-          std::array<std::array<LazyVertex, 3>, 8> boxVerts = unrollLoop2D(lazyBoxVerts, index_sequence<8>(), index_sequence<3>());
+          std::array<std::array<LazyVertex, /*3*/1>, 8> boxVerts = unrollLoop2D(lazyBoxVerts, index_sequence<8>(), index_sequence</*3*/1>());
 
           using BrickSizeF = int(LegoBrick::*)() const;
           auto faceIdxToNeighbor = [&brick](size_t i ) -> VoxelCoord {
@@ -839,15 +950,13 @@ void LegoCloudNode::exportToObj(QString filename)
               return vc * (offset ? (brick->*axisSizeFs[axis])() : -1);
           };
 
-
+          /*
           std::array<LazyFace<LazyTriIdx,TriIdx,TriIdx>,8> bevelCorners = unrollLoop1D([&boxVerts, &triColors, &faceIdxToSecondVertexIdx, &faceIdxToNormIdx](size_t i) -> LazyFace<LazyTriIdx,TriIdx,TriIdx> {
               std::array<size_t, 3> faceJs = {0, 1, 2};
               for(size_t j = 0; j < 3; ++j){
-                  //*
                   if((bool)(i & 1) ^ (bool)(i & 2) ^ (bool)(i & 4)){
                       faceJs[j] = 2 - faceJs[j];
                   }
-                  //*/
 
                   faceJs[j] = 2*faceJs[j] + (bool)(i & (1 << ((faceJs[j] + 2) % 3)));
               }
@@ -879,6 +988,7 @@ void LegoCloudNode::exportToObj(QString filename)
                             return faceIdxToNormIdx(faceJs[(corner + i / 2) % 4]);
                           }, index_sequence<4>()));
            }, index_sequence<3>(), index_sequence<4>());
+           //*/
 
           for(size_t face = 0; face < 6; ++face) {
               if(face == 4) {
@@ -891,14 +1001,16 @@ void LegoCloudNode::exportToObj(QString filename)
                   size_t j = faceIdxToSecondVertexIdx(face);
                   writeFace(objFile,
                             LazyQuadIdx{boxVerts[is[0]][j],boxVerts[is[1]][j],boxVerts[is[2]][j],boxVerts[is[3]][j]},
-                            quadColors,
+                            lazyBoxUVs[face],//quadColors,
                             QuadIdx{normIdx, normIdx, normIdx, normIdx});
                   std::array<size_t, 4> ks = faceIdxToFirstEdgeIdxs(face);
                   std::array<size_t, 4> ls = faceIdxToSecondEdgeIdxs(face);
+                  /*
                   for(size_t i = 0; i < 4; ++i){
                       objFile << bevelCorners[is[i]];
                       objFile << bevelEdges[ks[i]][ls[i]];
                   }
+                  //*/
               }
           }
       });
@@ -912,7 +1024,10 @@ void LegoCloudNode::exportToObj(QString filename)
           knobCenter[1] = p[0][1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;
           knobCenter[2] = p[0][2] + LEGO_KNOB_DISTANCE/2.0;
 
-          QuadIdx quadColors = {brickColor, brickColor, brickColor, brickColor};
+          Vector3 colorUV(brickColor % 16, brickColor / 16, 0);
+          LazyVertex studUV{colorUV + Vector3(0.75, 0.75,0), &uvCache};
+
+          LazyQuadIdx quadColors = {studUV, studUV, studUV, studUV};
 
           QVector<QVector<bool>> visibleStud(brick->getSizeX());
           QVector<QVector<QVector<LazyVertex>>> studIndices(brick->getSizeX());
@@ -950,10 +1065,11 @@ void LegoCloudNode::exportToObj(QString filename)
           }
 
           using CapIdx = std::array<int, KNOB_RESOLUTION_OBJ_EXPORT>;
+          using LazyCapIdx = std::array<LazyVertex, KNOB_RESOLUTION_OBJ_EXPORT>;
           CapIdx capNorm;
-          capNorm.fill(KNOB_RESOLUTION_OBJ_EXPORT + 1);
-          CapIdx capColor;
-          capColor.fill(brickColor);
+          capNorm.fill(KNOB_RESOLUTION_OBJ_EXPORT + 2);
+          LazyCapIdx capColor;
+          capColor.fill(studUV);
           //Write top caps face
           for(int x = 0; x < brick->getSizeX(); ++x)
           {
