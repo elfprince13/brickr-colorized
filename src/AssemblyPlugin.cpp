@@ -228,6 +228,7 @@ bool AssemblyPlugin::parseBinvox(const std::string& filename, LegoCloudNode* leg
 
   size = width * height * depth;
   legoCloudNode->getLegoCloud()->setVoxelGridDimmension(height, width, depth);
+  legoCloudNode->offset(Vector3(tx,ty,tz));
   /*
   if(colorFile.exists()) {
     if(colorFile.open(QIODevice::ReadOnly)) {

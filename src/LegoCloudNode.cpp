@@ -159,7 +159,8 @@ LegoCloudNode::LegoCloudNode()
   : legoCloud_(new LegoCloud()), renderLayerByLayer_(false), renderLayer_(0), knobList_(glGenLists(1)),
     renderBricks_(true), renderGraph_(false), colorRendering_(RealColor), drawDirty_(true)
 {
-
+    baseScale_ = 1.6;
+    basePoint_ = Vector3(2653477.260585, -3695084.806065, 0);
 }
 
 LegoCloudNode::~LegoCloudNode()
@@ -674,8 +675,15 @@ void LegoCloudNode::exportToObj(QString filename)
       std::cerr << "But it should be easy to fix!" << std::endl;
   } else {
       const float LEGO_VERTICAL_TOLERANCE = 0.0001f;
-      int brickIndex = 0;
-      int vertexIndex = 1;
+
+      Vector3 trueBasePoint = (basePoint_ / baseScale_)* LEGO_KNOB_DISTANCE;
+      float oldY = trueBasePoint.y();
+      //trueBasePoint.x() = -trueBasePoint.x();
+      trueBasePoint.y() = trueBasePoint.z();
+      trueBasePoint.z() = -oldY;
+
+      std::cout << "True base point: " << trueBasePoint << std::endl;
+
       //const QList<LegoBrick*>& outterBricks = legoCloud_->getOuterBricks();
       std::cout << "Flood filling open space markers...";
       LegoBrick *outside = new LegoBrick(-1, 0, 0, legoCloud_->getWidth(), legoCloud_->getDepth());
@@ -789,7 +797,8 @@ void LegoCloudNode::exportToObj(QString filename)
 
       objFile << "g bricks" << std::endl;
       objFile << "usemtl ldraw_palette" << std::endl;
-      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&p)[2], int brickColor){
+      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&pLocal)[2], int brickColor){
+          Vector3 p[2] = {trueBasePoint + pLocal[0], trueBasePoint + pLocal[1]};
           Vector3 o[2] = {
               // back/down/left corner gets offset front/up/right
               Vector3(LEGO_HORIZONTAL_TOLERANCE, LEGO_VERTICAL_TOLERANCE, LEGO_HORIZONTAL_TOLERANCE),
@@ -893,7 +902,8 @@ void LegoCloudNode::exportToObj(QString filename)
 
       objFile << "g studs" << std::endl;
       objFile << "usemtl ldraw_palette" << std::endl;
-      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&p)[2], int brickColor){
+      legoCloud_->forEachBrick([&](const LegoBrick* brick, const Vector3 (&pLocal)[2], int brickColor){
+          Vector3 p[2] = {trueBasePoint + pLocal[0], trueBasePoint + pLocal[1]};
           Vector3 knobCenter;//Center of back left knob (top)
           knobCenter[0] = p[0][0] + LEGO_KNOB_DISTANCE/2.0;
           knobCenter[1] = p[0][1] + LEGO_HEIGHT + LEGO_KNOB_HEIGHT;

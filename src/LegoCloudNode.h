@@ -81,6 +81,14 @@ private:
   bool renderGraph_;
   ColorRendering colorRendering_;
   bool drawDirty_;
+
+  Vector3 basePoint_;
+  float baseScale_;
+public:
+  inline void offset(Vector3 offBy) {
+      basePoint_ += offBy;
+      std::cout << "Translated base point: " << basePoint_ << std::endl;
+  }
 };
 
 #endif
