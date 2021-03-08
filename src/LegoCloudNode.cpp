@@ -214,9 +214,11 @@ std::array<LazyVertex, 4> getUVs(int width, int heightN, int heightD, int colorI
         Vector3(brickU, brickV + (UNIT * heightN) / heightD, 0),
         Vector3(brickU + (UNIT * width), brickV + (UNIT * heightN) / heightD, 0),
         Vector3(brickU + (UNIT * width), brickV, 0)};
+    /*
     std::cout << width << "x" << (heightN/float(heightD)) << " face has CCW coordinates: {";
     std::cout << "[" << (base+rawUVs[0]) << "], [" << (base+rawUVs[1]) << "], ["  << (base+rawUVs[2]) << "], ["  << (base+rawUVs[3]) << "]" ;
     std::cout << std::endl;
+    //*/
     if(rotate90) {
         /* now start along a +u edge */
         std::rotate(rawUVs.begin(), rawUVs.begin() + 1, rawUVs.end());
@@ -232,7 +234,7 @@ LegoCloudNode::LegoCloudNode()
     renderBricks_(true), renderGraph_(false), colorRendering_(RealColor), drawDirty_(true)
 {
     baseScale_ = 1.6;
-    basePoint_ = Vector3(0,0,0);//(2653477.260585, -3695084.806065, 0);
+    basePoint_ = Vector3(2653477.260585, -3695084.806065, 0);
 }
 
 LegoCloudNode::~LegoCloudNode()
