@@ -881,9 +881,12 @@ void LegoCloudNode::exportToObj(QString filename)
            }, index_sequence<3>(), index_sequence<4>());
 
           for(size_t face = 0; face < 6; ++face) {
+              if(face == 4) {
+                  continue; // skip the bottom
+              }
               VoxelCoord neighbor = faceIdxToNeighbor(face);
-              int normIdx = faceIdxToNormIdx(face);
               if(legoCloud_->visible(brick, outside, neighbor)) {
+                  int normIdx = faceIdxToNormIdx(face);
                   std::array<size_t, 4> is = faceIdxToFirstVertexIdxs(face);
                   size_t j = faceIdxToSecondVertexIdx(face);
                   writeFace(objFile,
